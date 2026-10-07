@@ -41,6 +41,7 @@ class AuthViewModel(private val loginUseCase: LoginUseCase) : ViewModel() {
     private fun Throwable.toUserMessage(): String = when (this) {
         is InvalidCredentialsException -> "Usuario o contraseña incorrectos"
         is IllegalArgumentException -> message ?: "Datos invalidos"
-        else -> "No se pudo conectar con el servidor. Revisa tu conexion."
+        else -> message?.takeIf { it.isNotBlank() }
+            ?: "No se pudo conectar con el servidor. Revisa tu conexion y verifica que el servidor esté activo."
     }
 }
