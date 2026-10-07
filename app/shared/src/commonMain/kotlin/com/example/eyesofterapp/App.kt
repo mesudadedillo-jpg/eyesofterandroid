@@ -1,39 +1,35 @@
 package com.example.eyesofterapp
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.eyesofterapp.composeApp.navigation.AppNavHost
 import com.example.eyesofterapp.composeApp.theme.EyeSofterTheme
-import com.example.eyesofterapp.domain.model.Role
-import com.example.eyesofterapp.domain.model.Session
-import com.example.eyesofterapp.domain.model.User
-import com.example.eyesofterapp.ui.AuthUiState
+import com.example.eyesofterapp.ui.AuthViewModel
 
 /*
- * VERSION TEMPORAL de App.kt (Integrante 3).
- * Funciona SIN servidor: simula un login para poder ver cada pantalla por rol.
- * Cambia Role.DOCTOR por otro rol para probar cada vista.
- * Cuando el Integrante 2 suba AuthViewModel y AppContainer, se reemplaza por la version final.
+ * VERSION FINAL de App.kt (Integrante 3).
+ * Se usa SOLO despues de hacer "git pull origin frontend" y tener los archivos del Integrante 2
+ * (AuthViewModel.kt y AppContainer.kt).
  */
 @Composable
 fun App() {
     EyeSofterTheme {
-        var state by remember { mutableStateOf(AuthUiState()) }
+        // Se crea una sola vez: arma HttpClient -> AuthApi -> Repository -> UseCase
+        val container = remember { AppContainer() }
+
+        // El ViewModel sobrevive a rotaciones de pantalla
+        val authViewModel = viewModel<AuthViewModel> { AuthViewModel(container.loginUseCase) }
+
+        // Convierte el StateFlow en un estado de Compose: cada cambio redibuja la pantalla
+        val state by authViewModel.state.collectAsState()
 
         AppNavHost(
             state = state,
-            onLogin = { username, _ ->
-                state = AuthUiState(
-                    session = Session(
-                        token = "token-falso",
-                        user = User(username, "Usuario de prueba", Role.DOCTOR)
-                    )
-                )
-            },
-            onLogout = { state = AuthUiState() }
+            onLogin = authViewModel::login,
+            onLogout = authViewModel::logout
         )
     }
 }
