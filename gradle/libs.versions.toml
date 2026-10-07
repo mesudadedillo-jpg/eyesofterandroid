@@ -14,6 +14,8 @@ junit = "4.13.2"
 kotlin = "2.4.20"
 kotlin-wrappers = "2026.9.3"
 kotlinx-coroutines = "1.11.0"
+
+kotlinx-serialization = "1.8.1"
 ktor = "3.6.0"
 logback = "1.6.5"
 material3 = "1.12.0-alpha03"
@@ -43,6 +45,26 @@ ktor-serverNetty = { module = "io.ktor:ktor-server-netty-jvm", version.ref = "kt
 ktor-serverTestHost = { module = "io.ktor:ktor-server-test-host-jvm", version.ref = "ktor" }
 wrappers-browser = { module = "org.jetbrains.kotlin-wrappers:kotlin-browser", version.ref = "kotlin-wrappers" }
 
+# ---- NUEVO: serializacion y corrutinas ----
+kotlinx-coroutinesCore = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
+kotlinx-serializationJson = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+
+# ---- NUEVO: Ktor SERVER (modulo :server) ----
+ktor-serverContentNegotiation = { module = "io.ktor:ktor-server-content-negotiation-jvm", version.ref = "ktor" }
+ktor-serverCors = { module = "io.ktor:ktor-server-cors-jvm", version.ref = "ktor" }
+ktor-serverStatusPages = { module = "io.ktor:ktor-server-status-pages-jvm", version.ref = "ktor" }
+ktor-serializationKotlinxJson = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
+
+# ---- NUEVO: Ktor CLIENT (modulo :app:shared) ----
+ktor-clientCore = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
+ktor-clientContentNegotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
+ktor-clientLogging = { module = "io.ktor:ktor-client-logging", version.ref = "ktor" }
+# Un motor HTTP por plataforma:
+ktor-clientOkhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
+ktor-clientDarwin = { module = "io.ktor:ktor-client-darwin", version.ref = "ktor" }
+ktor-clientJava = { module = "io.ktor:ktor-client-java", version.ref = "ktor" }
+ktor-clientJs = { module = "io.ktor:ktor-client-js", version.ref = "ktor" }
+
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }
 androidMultiplatformLibrary = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
@@ -50,4 +72,6 @@ composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMul
 composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+# NUEVO: activa @Serializable
+kotlinSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ktor = { id = "io.ktor.plugin", version.ref = "ktor" }
