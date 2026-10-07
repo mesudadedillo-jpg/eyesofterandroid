@@ -2,7 +2,7 @@ package com.example.eyesofterapp.domain.model
 
 
 enum class Role {
-    ADMINISTRADOR, SUPERVISOR, CLIENTE, DOCTOR, VENDEDOR, ALUMNO, DESCONOCIDO;
+    ADMINISTRADOR, SUPERVISOR, CLIENTE, DOCTOR, ALUMNO, DESCONOCIDO;
 
     companion object {
         fun fromString(value: String): Role =

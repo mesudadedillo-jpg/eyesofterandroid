@@ -61,7 +61,6 @@ fun Application.module() {
                     "supervisor" -> "SUPERVISOR"
                     "cliente" -> "CLIENTE"
                     "doctor" -> "DOCTOR"
-                    "vendedor" -> "VENDEDOR"
                     "alumno" -> "ALUMNO"
                     else -> "CLIENTE"
                 }
@@ -70,7 +69,6 @@ fun Application.module() {
                     "ADMINISTRADOR" -> "Administrador del Sistema"
                     "SUPERVISOR" -> "Supervisor General"
                     "DOCTOR" -> "Dr. Médico Especialista"
-                    "VENDEDOR" -> "Vendedor de Tienda"
                     "ALUMNO" -> "Alumno Usuario"
                     else -> request.username.replaceFirstChar { it.uppercase() }
                 }

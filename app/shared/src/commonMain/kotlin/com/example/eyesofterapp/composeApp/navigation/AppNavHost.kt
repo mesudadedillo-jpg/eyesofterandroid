@@ -10,7 +10,6 @@ import com.example.eyesofterapp.composeApp.screens.DoctorScreen
 import com.example.eyesofterapp.composeApp.screens.LoginScreen
 import com.example.eyesofterapp.composeApp.screens.RoleScaffold
 import com.example.eyesofterapp.composeApp.screens.SupervisorScreen
-import com.example.eyesofterapp.composeApp.screens.VendedorScreen
 import com.example.eyesofterapp.ui.AuthUiState
 
 /**
@@ -34,7 +33,6 @@ fun AppNavHost(
             is Screen.Supervisor -> SupervisorScreen(current.user, onLogout)
             is Screen.Cliente -> ClienteScreen(current.user, onLogout)
             is Screen.Doctor -> DoctorScreen(current.user, onLogout)
-            is Screen.Vendedor -> VendedorScreen(current.user, onLogout)
             is Screen.Alumno -> AlumnoScreen(current.user, onLogout)
             is Screen.Desconocido -> RoleScaffold("Rol no reconocido", current.user, onLogout) {
                 Text("Tu rol no tiene una vista asignada. Contacta al administrador.")

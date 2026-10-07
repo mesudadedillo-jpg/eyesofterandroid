@@ -110,13 +110,6 @@ fun DoctorScreen(user: User, onLogout: () -> Unit) =
     }
 
 @Composable
-fun VendedorScreen(user: User, onLogout: () -> Unit) =
-    RoleScaffold("Panel de Ventas", user, onLogout) {
-        InfoCard("Catálogo", "Productos disponibles.")
-        InfoCard("Pedidos", "Pedidos en curso y su estado.")
-    }
-
-@Composable
 fun AlumnoScreen(user: User, onLogout: () -> Unit) =
     RoleScaffold("Cuida tu vista", user, onLogout) {
         InfoCard("Regla 20-20-20", "Cada 20 minutos, mira algo a 20 pies (6 m) durante 20 segundos.")
