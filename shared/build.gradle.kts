@@ -5,7 +5,7 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
-    alias(libs.plugins.androidMultiplatformLibrary)
+    id("com.android.library")
     alias(libs.plugins.kotlinSerialization)
     alias(libs.plugins.buildkonfig)
 }
@@ -32,13 +32,9 @@ kotlin {
 
     jvm()
 
-    android {
-        namespace = "mx.eyesofter.suite.shared"
-        compileSdk = libs.versions.android.compileSdk.get().toInt()
-        minSdk = libs.versions.android.minSdk.get().toInt()
-
+    androidTarget {
         compilerOptions {
-            jvmTarget = JvmTarget.JVM_11
+            jvmTarget.set(JvmTarget.JVM_17)
         }
     }
 
@@ -73,5 +69,18 @@ buildkonfig {
 
     defaultConfigs {
         buildConfigField(Type.STRING, "API_BASE_URL", apiBaseUrl)
+    }
+}
+
+android {
+    namespace = "mx.eyesofter.suite.shared"
+    compileSdk = 34
+
+    defaultConfig {
+        minSdk = 24
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 }
