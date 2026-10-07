@@ -1,25 +1,19 @@
-// Depende de: gradle/libs.versions.toml, project(":shared")
 plugins {
     alias(libs.plugins.kotlinJvm)
-    alias(libs.plugins.kotlinSerialization)
     alias(libs.plugins.ktor)
 }
 
-group = "mx.eyesofter.suite"
+group = "com.example.eyesofterapp"
 version = "1.0.0"
-
 application {
-    mainClass = "mx.eyesofter.suite.ApplicationKt"
+    mainClass = "com.example.eyesofterapp.ApplicationKt"
 }
 
 dependencies {
-    implementation(project(":shared"))
+    api(project(":core"))
     implementation(libs.logback)
-    implementation(libs.ktor.server.core)
-    implementation(libs.ktor.server.netty)
-    implementation(libs.ktor.server.content.negotiation)
-    implementation(libs.ktor.server.cors)
-    implementation(libs.ktor.serialization.kotlinx.json)
-    testImplementation(libs.ktor.server.test.host)
+    implementation(libs.ktor.serverCore)
+    implementation(libs.ktor.serverNetty)
+    testImplementation(libs.ktor.serverTestHost)
     testImplementation(libs.kotlin.testJunit)
 }
