@@ -38,10 +38,20 @@ class AuthViewModel(private val loginUseCase: LoginUseCase) : ViewModel() {
         _state.value = AuthUiState()
     }
 
-    private fun Throwable.toUserMessage(): String = when (this) {
-        is InvalidCredentialsException -> "Usuario o contraseña incorrectos"
-        is IllegalArgumentException -> message ?: "Datos invalidos"
-        else -> message?.takeIf { it.isNotBlank() }
-            ?: "No se pudo conectar con el servidor. Revisa tu conexion y verifica que el servidor esté activo."
+    private fun Throwable.toUserMessage(): String = when {
+        this is InvalidCredentialsException -> "Usuario o contraseña incorrectos"
+        this is IllegalArgumentException -> message ?: "Datos inválidos"
+        else -> {
+            val msg = message ?: ""
+            if (msg.contains("connect", ignoreCase = true) ||
+                msg.contains("timeout", ignoreCase = true) ||
+                msg.contains("refused", ignoreCase = true) ||
+                msg.contains("No se pudo conectar", ignoreCase = true)
+            ) {
+                "No se pudo conectar con el servidor (puerto 8080). Asegúrate de que el servidor Ktor esté activo."
+            } else {
+                msg.ifBlank { "No se pudo conectar con el servidor. Revisa tu conexión." }
+            }
+        }
     }
 }

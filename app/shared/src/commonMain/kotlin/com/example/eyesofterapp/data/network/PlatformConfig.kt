@@ -1,3 +1,5 @@
 package com.example.eyesofterapp.data.network
 
-expect fun platformBaseUrl(): String
+expect fun platformBaseUrls(): List<String>
+
+fun platformBaseUrl(): String = platformBaseUrls().first()
