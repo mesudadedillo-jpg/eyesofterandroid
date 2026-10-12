@@ -1,0 +1,32 @@
+[
+  {
+    "username": "admin",
+    "password": "123456",
+    "fullName": "Administrador del Sistema",
+    "role": "ADMINISTRADOR"
+  },
+  {
+    "username": "supervisor",
+    "password": "123456",
+    "fullName": "Supervisor General",
+    "role": "SUPERVISOR"
+  },
+  {
+    "username": "cliente",
+    "password": "123456",
+    "fullName": "Cliente Demo",
+    "role": "CLIENTE"
+  },
+  {
+    "username": "doctor",
+    "password": "123456",
+    "fullName": "Dr. Médico Especialista",
+    "role": "DOCTOR"
+  },
+  {
+    "username": "alumno",
+    "password": "123456",
+    "fullName": "Alumno Usuario",
+    "role": "ALUMNO"
+  }
+]

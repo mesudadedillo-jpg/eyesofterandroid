@@ -3,13 +3,21 @@ plugins {
     alias(libs.plugins.kotlinJvm)
     alias(libs.plugins.kotlinSerialization)
     alias(libs.plugins.ktor)
+    application
 }
 
 group = "mx.eyesofter.suite"
 version = "1.0.0"
 
 application {
-    mainClass = "mx.eyesofter.suite.ApplicationKt"
+    mainClass.set("mx.eyesofter.suite.ApplicationKt")
+}
+
+// Permite a Android Studio ejecutar la función main() directamente desde Application.kt
+tasks.register<JavaExec>("mx.eyesofter.suite.ApplicationKt.main()") {
+    group = "application"
+    mainClass.set("mx.eyesofter.suite.ApplicationKt")
+    classpath = sourceSets["main"].runtimeClasspath
 }
 
 dependencies {

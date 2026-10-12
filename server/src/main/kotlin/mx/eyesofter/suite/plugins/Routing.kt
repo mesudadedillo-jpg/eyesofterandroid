@@ -4,10 +4,12 @@ package mx.eyesofter.suite.plugins
 
 import io.ktor.server.application.Application
 import io.ktor.server.routing.routing
+import mx.eyesofter.suite.routes.authRoutes
 import mx.eyesofter.suite.routes.resultadoRoutes
 
 fun Application.configureRouting() {
     routing {
+        authRoutes()
         resultadoRoutes()
     }
 }
