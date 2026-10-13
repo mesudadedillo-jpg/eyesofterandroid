@@ -15,6 +15,7 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.io.File
 
 @Serializable
 data class UserRecord(
@@ -29,16 +30,31 @@ private val jsonDecoder = Json {
     isLenient = true
 }
 
-private fun loadUsers(): List<UserRecord> {
-    val inputStream = Thread.currentThread().contextClassLoader?.getResourceAsStream("users.json")
-        ?: Application::class.java.classLoader.getResourceAsStream("users.json")
-        ?: return emptyList()
 
+private fun findUsersFile(): File? {
+    val candidates = listOfNotNull(
+        System.getenv("USERS_FILE"),
+        "src/main/resources/users.json",
+        "server/src/main/resources/users.json"
+    )
+    return candidates.map { File(it) }.firstOrNull { it.isFile }
+}
+
+private fun loadUsers(): List<UserRecord> {
+    val file = findUsersFile()
     return try {
-        val content = inputStream.bufferedReader().use { it.readText() }
-        jsonDecoder.decodeFromString(content)
+        val content = if (file != null) {
+            println("Leyendo usuarios desde: ${file.absolutePath}")
+            file.readText(Charsets.UTF_8)
+        } else {
+            println("users.json no encontrado en disco; usando la copia empaquetada")
+            Application::class.java.classLoader.getResourceAsStream("users.json")
+                ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                ?: return emptyList()
+        }
+        jsonDecoder.decodeFromString<List<UserRecord>>(content)
     } catch (e: Exception) {
-        e.printStackTrace()
+        println("ERROR al leer users.json: ${e.message}")
         emptyList()
     }
 }
@@ -70,7 +86,7 @@ fun Application.module() {
         post("/api/login") {
             try {
                 val request = call.receive<LoginRequestDto>()
-                
+
                 println("Intento de login recibido para usuario: ${request.username}")
 
                 if (request.password.isBlank()) {
@@ -81,40 +97,19 @@ fun Application.module() {
                 val users = loadUsers()
                 val userRecord = users.firstOrNull { it.username.equals(request.username, ignoreCase = true) }
 
-                val isValid = if (userRecord != null) {
-                    request.password == userRecord.password || request.password == "123456" || request.password == "admin"
-                } else {
-                    request.password == "123456" || request.password == request.username || request.password == "admin"
-                }
 
-                if (!isValid) {
+                if (userRecord == null || request.password != userRecord.password) {
+                    println("Login rechazado para: ${request.username}")
                     call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Credenciales inválidas"))
                     return@post
-                }
-
-                val role = userRecord?.role ?: when (request.username.lowercase()) {
-                    "admin" -> "ADMINISTRADOR"
-                    "supervisor" -> "SUPERVISOR"
-                    "cliente" -> "CLIENTE"
-                    "doctor" -> "DOCTOR"
-                    "alumno" -> "ALUMNO"
-                    else -> "CLIENTE"
-                }
-
-                val fullName = userRecord?.fullName ?: when (role) {
-                    "ADMINISTRADOR" -> "Administrador del Sistema"
-                    "SUPERVISOR" -> "Supervisor General"
-                    "DOCTOR" -> "Dr. Médico Especialista"
-                    "ALUMNO" -> "Alumno Usuario"
-                    else -> request.username.replaceFirstChar { it.uppercase() }
                 }
 
                 val response = LoginResponseDto(
                     token = "jwt-mock-token-${System.currentTimeMillis()}",
                     user = UserDto(
-                        username = userRecord?.username ?: request.username,
-                        fullName = fullName,
-                        role = role
+                        username = userRecord.username,
+                        fullName = userRecord.fullName,
+                        role = userRecord.role
                     )
                 )
 

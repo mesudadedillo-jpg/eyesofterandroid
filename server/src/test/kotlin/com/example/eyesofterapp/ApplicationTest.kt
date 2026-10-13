@@ -60,4 +60,36 @@ class ApplicationTest {
 
         assertEquals(HttpStatusCode.Unauthorized, response.status)
     }
+
+    @Test
+    fun testSoloValeLaContrasenaDelJson() = testApplication {
+        application {
+            module()
+        }
+
+        val client = createClient {
+            install(ContentNegotiation) {
+                json()
+            }
+        }
+
+
+        val ok = client.post("/api/login") {
+            contentType(ContentType.Application.Json)
+            setBody(LoginRequestDto("cliente", "555"))
+        }
+        assertEquals(HttpStatusCode.OK, ok.status)
+
+        val maestra = client.post("/api/login") {
+            contentType(ContentType.Application.Json)
+            setBody(LoginRequestDto("cliente", "123456"))
+        }
+        assertEquals(HttpStatusCode.Unauthorized, maestra.status)
+
+        val inexistente = client.post("/api/login") {
+            contentType(ContentType.Application.Json)
+            setBody(LoginRequestDto("fantasma", "123456"))
+        }
+        assertEquals(HttpStatusCode.Unauthorized, inexistente.status)
+    }
 }
