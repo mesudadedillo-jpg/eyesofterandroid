@@ -13,7 +13,6 @@ import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlin.coroutines.cancellation.CancellationException
 
-
 class AuthApi(private val client: HttpClient) {
 
     private var activeBaseUrl: String? = null
@@ -48,12 +47,12 @@ class AuthApi(private val client: HttpClient) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                println("Servidor Ktor externo no detectado en $baseUrl (${e.message}), intentando con siguiente dirección...")
+                println("Servidor en $baseUrl no respondió (${e.message}), intentando siguiente dirección...")
             }
         }
         throw IllegalStateException(
-            "No se pudo conectar con el servidor (puerto 8080). " +
-                    "Asegúrate de que el servidor Ktor esté activo."
+            "No se pudo conectar con el servidor ($BASE_URL). " +
+                    "Asegúrate de tener conexión a internet."
         )
     }
 }

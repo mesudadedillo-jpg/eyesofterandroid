@@ -2,6 +2,7 @@ package com.example.eyesofterapp.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.eyesofterapp.data.network.BASE_URL
 import com.example.eyesofterapp.domain.model.InvalidCredentialsException
 import com.example.eyesofterapp.domain.usecase.LoginUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -10,17 +11,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-
 class AuthViewModel(private val loginUseCase: LoginUseCase) : ViewModel() {
 
-
     private val _state = MutableStateFlow(AuthUiState())
-
-
     val state: StateFlow<AuthUiState> = _state.asStateFlow()
 
     fun login(username: String, password: String) {
-
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
 
@@ -48,9 +44,9 @@ class AuthViewModel(private val loginUseCase: LoginUseCase) : ViewModel() {
                 msg.contains("refused", ignoreCase = true) ||
                 msg.contains("No se pudo conectar", ignoreCase = true)
             ) {
-                "No se pudo conectar con el servidor (puerto 8080). Asegúrate de que el servidor Ktor esté activo."
+                "No se pudo conectar con el servidor ($BASE_URL). Revisa tu conexión a internet."
             } else {
-                msg.ifBlank { "No se pudo conectar con el servidor. Revisa tu conexión." }
+                msg.ifBlank { "No se pudo conectar con el servidor. Revisa tu conexión a internet." }
             }
         }
     }
