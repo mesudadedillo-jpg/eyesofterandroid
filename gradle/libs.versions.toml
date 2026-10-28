@@ -19,7 +19,8 @@ kotlinx-serialization = "1.8.1"
 ktor = "3.6.0"
 logback = "1.6.5"
 material3 = "1.12.0-alpha03"
-playServicesLocation = "21.3.0"
+maplibre = "11.6.1"
+graphicsPath = "1.1.0"
 hikari = "6.2.1"
 mysql = "9.2.0"
 bcrypt = "0.10.2"
@@ -69,7 +70,8 @@ ktor-clientContentNegotiation = { module = "io.ktor:ktor-client-content-negotiat
 ktor-clientLogging = { module = "io.ktor:ktor-client-logging", version.ref = "ktor" }
 ktor-clientMock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
 kotlinx-coroutinesTest = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
-playServices-location = { module = "com.google.android.gms:play-services-location", version.ref = "playServicesLocation" }
+maplibre-android = { module = "org.maplibre.gl:android-sdk", version.ref = "maplibre" }
+androidx-graphics-path = { module = "androidx.graphics:graphics-path", version.ref = "graphicsPath" }
 multiplatformSettings = { module = "com.russhwolf:multiplatform-settings", version.ref = "multiplatformSettings" }
 multiplatformSettingsNoArg = { module = "com.russhwolf:multiplatform-settings-no-arg", version.ref = "multiplatformSettings" }
 

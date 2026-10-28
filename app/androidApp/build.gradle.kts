@@ -15,8 +15,17 @@ dependencies {
     implementation(project(":app:shared"))
 
     implementation(libs.androidx.activity.compose)
-
+    implementation(libs.androidx.lifecycle.runtimeCompose)
     implementation(libs.compose.uiToolingPreview)
+    implementation(libs.compose.foundation)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.ui)
+    implementation(libs.androidx.graphics.path)
+    implementation(libs.maplibre.android)
+    implementation(libs.ktor.clientCore)
+    implementation(libs.ktor.clientOkhttp)
+    implementation(libs.kotlinx.coroutinesCore)
+    implementation(libs.kotlinx.serializationJson)
     debugImplementation(libs.compose.uiTooling)
 }
 

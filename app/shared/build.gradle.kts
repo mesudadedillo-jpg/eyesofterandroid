@@ -59,7 +59,7 @@ kotlin {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.compose.uiTooling)
             implementation(libs.ktor.clientOkhttp)   // NUEVO: motor HTTP de Android
-            implementation(libs.playServices.location)
+            // Sin GMS location
         }
         commonMain.dependencies {
             api(project(":core"))

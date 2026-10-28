@@ -1,8 +1,13 @@
 package com.example.eyesofterapp
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.LocationManager
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -10,7 +15,19 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.example.eyesofterapp.location.AndroidLocationProvider
 
@@ -23,11 +40,46 @@ class MainActivity : ComponentActivity() {
     ) { permissions ->
         val granted = permissions.values.any { it }
         if (granted) {
-            Toast.makeText(this, "📍 Permiso GPS Concedido en Android", Toast.LENGTH_SHORT).show()
+            checkGpsAndReturn(true)
         } else {
-            Toast.makeText(this, "❌ Permiso GPS Denegado en Android", Toast.LENGTH_SHORT).show()
+            // Evaluamos el caso "Denegado Permanentemente"
+            val shouldShowRationale = ActivityCompat.shouldShowRequestPermissionRationale(
+                this, Manifest.permission.ACCESS_FINE_LOCATION
+            ) || ActivityCompat.shouldShowRequestPermissionRationale(
+                this, Manifest.permission.ACCESS_COARSE_LOCATION
+            )
+
+            if (!shouldShowRationale) {
+                Toast.makeText(this, "Permiso denegado permanentemente. Actívalo en Ajustes.", Toast.LENGTH_LONG).show()
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", packageName, null)
+                }
+                startActivity(intent)
+            } else {
+                Toast.makeText(this, "❌ Permiso GPS Denegado", Toast.LENGTH_SHORT).show()
+            }
+            onPermissionResultCallback?.invoke(false)
+            onPermissionResultCallback = null
         }
-        onPermissionResultCallback?.invoke(granted)
+    }
+
+    private fun checkGpsAndReturn(permissionGranted: Boolean) {
+        if (permissionGranted) {
+            val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val isGpsEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+            val isNetworkEnabled = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+
+            if (!isGpsEnabled && !isNetworkEnabled) {
+                Toast.makeText(this, "📍 GPS apagado. Por favor actívalo.", Toast.LENGTH_LONG).show()
+                startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                onPermissionResultCallback?.invoke(false)
+            } else {
+                Toast.makeText(this, "📍 Sensor GPS autorizado y activo", Toast.LENGTH_SHORT).show()
+                onPermissionResultCallback?.invoke(true)
+            }
+        } else {
+            onPermissionResultCallback?.invoke(false)
+        }
         onPermissionResultCallback = null
     }
 
@@ -40,11 +92,11 @@ class MainActivity : ComponentActivity() {
             this, Manifest.permission.ACCESS_COARSE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
 
+        onPermissionResultCallback = callback
+
         if (fineGranted || coarseGranted) {
-            Toast.makeText(this, "📍 Sensor GPS ya autorizado en el dispositivo", Toast.LENGTH_SHORT).show()
-            callback(true)
+            checkGpsAndReturn(true)
         } else {
-            onPermissionResultCallback = callback
             requestPermissionLauncher.launch(
                 arrayOf(
                     Manifest.permission.ACCESS_FINE_LOCATION,
@@ -65,7 +117,25 @@ class MainActivity : ComponentActivity() {
                     requestPermission = ::solicitarPermisosUbicacion
                 )
             }
-            App(locationProvider = locationProvider)
+            
+            var showMap by remember { mutableStateOf(false) }
+
+            Box(modifier = Modifier.fillMaxSize()) {
+                if (showMap) {
+                    PantallaMapa()
+                } else {
+                    App(locationProvider = locationProvider)
+                }
+
+                FloatingActionButton(
+                    onClick = { showMap = !showMap },
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(16.dp, 16.dp, 16.dp, 100.dp)
+                ) {
+                    Text(if (showMap) "App" else "Mapa")
+                }
+            }
         }
     }
 }
