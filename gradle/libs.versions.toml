@@ -19,6 +19,11 @@ kotlinx-serialization = "1.8.1"
 ktor = "3.6.0"
 logback = "1.6.5"
 material3 = "1.12.0-alpha03"
+playServicesLocation = "21.3.0"
+hikari = "6.2.1"
+mysql = "9.2.0"
+bcrypt = "0.10.2"
+multiplatformSettings = "1.3.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -54,13 +59,20 @@ ktor-serverContentNegotiation = { module = "io.ktor:ktor-server-content-negotiat
 ktor-serverCors = { module = "io.ktor:ktor-server-cors-jvm", version.ref = "ktor" }
 ktor-serverStatusPages = { module = "io.ktor:ktor-server-status-pages-jvm", version.ref = "ktor" }
 ktor-serializationKotlinxJson = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
+hikariCP = { module = "com.zaxxer:HikariCP", version.ref = "hikari" }
+mysqlConnectorJ = { module = "com.mysql:mysql-connector-j", version.ref = "mysql" }
+bcrypt = { module = "at.favre.lib:bcrypt", version.ref = "bcrypt" }
 
-# ---- NUEVO: Ktor CLIENT (modulo :app:shared) ----
+# ---- NUEVO: Ktor CLIENT & Settings (modulo :app:shared) ----
 ktor-clientCore = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-clientContentNegotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
 ktor-clientLogging = { module = "io.ktor:ktor-client-logging", version.ref = "ktor" }
 ktor-clientMock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
 kotlinx-coroutinesTest = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
+playServices-location = { module = "com.google.android.gms:play-services-location", version.ref = "playServicesLocation" }
+multiplatformSettings = { module = "com.russhwolf:multiplatform-settings", version.ref = "multiplatformSettings" }
+multiplatformSettingsNoArg = { module = "com.russhwolf:multiplatform-settings-no-arg", version.ref = "multiplatformSettings" }
+
 # Un motor HTTP por plataforma:
 ktor-clientOkhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
 ktor-clientDarwin = { module = "io.ktor:ktor-client-darwin", version.ref = "ktor" }

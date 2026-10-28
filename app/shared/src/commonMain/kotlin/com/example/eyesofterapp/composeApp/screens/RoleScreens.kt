@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -22,10 +23,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.eyesofterapp.domain.model.User
 
-/**
- * Estructura comun de TODAS las pantallas por rol: barra superior (con boton "Salir"),
- * saludo y rol. Cada pantalla solo escribe su contenido propio en la lambda "content".
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RoleScaffold(
@@ -65,53 +62,60 @@ fun RoleScaffold(
     }
 }
 
-/** Tarjeta simple reutilizable para mostrar secciones. */
 @Composable
-fun InfoCard(title: String, description: String) {
+fun InfoCard(title: String, description: String, onClick: (() -> Unit)? = null) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
             Text(description, style = MaterialTheme.typography.bodyMedium)
+            if (onClick != null) {
+                Button(onClick = onClick) {
+                    Text("Ver Ópticas Cercanas")
+                }
+            }
         }
     }
 }
 
 @Composable
-fun AdminScreen(user: User, onLogout: () -> Unit) =
+fun AdminScreen(user: User, onLogout: () -> Unit, onVerOpticas: () -> Unit = {}) =
     RoleScaffold("Panel de Administración", user, onLogout) {
         InfoCard("Dashboard", "Alumnos evaluados, casos abiertos y tiempo promedio de atención.")
         InfoCard("Usuarios", "Alta, edición y baja de usuarios del sistema.")
-        InfoCard("Clínicas", "Directorio de consultorios y ópticas asociadas.")
+        InfoCard("Clínicas y Ópticas", "Directorio de consultorios y ópticas cercanas.", onClick = onVerOpticas)
     }
 
 @Composable
-fun SupervisorScreen(user: User, onLogout: () -> Unit) =
+fun SupervisorScreen(user: User, onLogout: () -> Unit, onVerOpticas: () -> Unit = {}) =
     RoleScaffold("Panel del Supervisor", user, onLogout) {
         InfoCard("Casos abiertos", "Seguimiento de los casos pendientes por grado y grupo.")
         InfoCard("Comprobantes", "Validar o rechazar los comprobantes enviados.")
+        InfoCard("Directorio", "Ver ópticas cercanas registradas.", onClick = onVerOpticas)
     }
 
 @Composable
-fun ClienteScreen(user: User, onLogout: () -> Unit) =
+fun ClienteScreen(user: User, onLogout: () -> Unit, onVerOpticas: () -> Unit = {}) =
     RoleScaffold("Mi espacio", user, onLogout) {
         InfoCard("Reporte", "Resultado en formato semáforo, en lenguaje claro.")
-        InfoCard("Directorio", "Clínicas y ópticas cercanas.")
+        InfoCard("Directorio", "Clínicas y ópticas cercanas.", onClick = onVerOpticas)
         InfoCard("Comprobantes", "Sube la receta o el comprobante de lentes.")
     }
 
 @Composable
-fun DoctorScreen(user: User, onLogout: () -> Unit) =
+fun DoctorScreen(user: User, onLogout: () -> Unit, onVerOpticas: () -> Unit = {}) =
     RoleScaffold("Panel del Doctor", user, onLogout) {
         InfoCard("Escanear pase", "Lee el código QR del pase médico del paciente.")
         InfoCard("Atenciones", "Registro de las atenciones brindadas.")
+        InfoCard("Ópticas", "Directorio de ópticas asociadas.", onClick = onVerOpticas)
     }
 
 @Composable
-fun AlumnoScreen(user: User, onLogout: () -> Unit) =
+fun AlumnoScreen(user: User, onLogout: () -> Unit, onVerOpticas: () -> Unit = {}) =
     RoleScaffold("Cuida tu vista", user, onLogout) {
         InfoCard("Regla 20-20-20", "Cada 20 minutos, mira algo a 20 pies (6 m) durante 20 segundos.")
         InfoCard("Ejercicios", "Parpadeo, enfoque y relajación ocular.")
+        InfoCard("Ópticas Cercanas", "Encuentra ópticas y clínicas de atención visual.", onClick = onVerOpticas)
     }

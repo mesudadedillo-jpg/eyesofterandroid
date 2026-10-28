@@ -59,6 +59,7 @@ kotlin {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.compose.uiTooling)
             implementation(libs.ktor.clientOkhttp)   // NUEVO: motor HTTP de Android
+            implementation(libs.playServices.location)
         }
         commonMain.dependencies {
             api(project(":core"))
@@ -71,13 +72,14 @@ kotlin {
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
 
-
             implementation(libs.ktor.clientCore)
             implementation(libs.ktor.clientContentNegotiation)
             implementation(libs.ktor.serializationKotlinxJson)
             implementation(libs.ktor.clientLogging)
             implementation(libs.kotlinx.serializationJson)
             implementation(libs.kotlinx.coroutinesCore)
+            implementation(libs.multiplatformSettings)
+            implementation(libs.multiplatformSettingsNoArg)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
