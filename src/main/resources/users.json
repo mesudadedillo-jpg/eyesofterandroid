@@ -1,7 +1,7 @@
 [
   {
     "username": "admin",
-    "password": "123456",
+    "password": "contraseña",
     "fullName": "Administrador del Sistema",
     "role": "ADMINISTRADOR"
   },
@@ -25,7 +25,7 @@
   },
   {
     "username": "alumno",
-    "password": "999",
+    "password": "2534717",
     "fullName": "Alumno Usuario",
     "role": "ALUMNO"
   }

@@ -8,7 +8,7 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 
 /**
- * ESTO ES UN CAMBIO Punto de entrada del servidor.
+ *  Punto de entrada del servidor.
  *
  * El puerto se lee de la variable de entorno PORT porque Railway asigna uno
  * distinto cada vez que despliega. En tu computadora no existe PORT,
