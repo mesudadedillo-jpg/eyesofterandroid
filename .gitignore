@@ -1,19 +1,9 @@
-*.iml
-.kotlin
+# Archivos que Git no debe guardar: se generan solos o son de cada computadora.
 .gradle
-**/build/
-xcuserdata
-!src/**/build/
-local.properties
+.kotlin
+build/
 .idea
+*.iml
+local.properties
 .DS_Store
-captures
-.externalNativeBuild
-.cxx
-*.xcodeproj/*
-!*.xcodeproj/project.pbxproj
-!*.xcodeproj/xcshareddata/
-!*.xcodeproj/project.xcworkspace/
-!*.xcworkspace/contents.xcworkspacedata
-**/xcshareddata/WorkspaceSettings.xcsettings
-node_modules/
+out/
