@@ -1,0 +1,9 @@
+# Lo que Docker NO debe copiar a la imagen al hacer COPY.
+# Se compila dentro de Docker, así que las carpetas build locales sobran.
+.git
+.gradle
+.kotlin
+.idea
+build
+*.iml
+local.properties

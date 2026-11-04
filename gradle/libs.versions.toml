@@ -1,0 +1,31 @@
+# Catálogo de versiones: un solo lugar para cambiar la versión de cada librería.
+# Solo contiene lo que el servidor usa HOY. Las versiones son las mismas
+# que tenía el proyecto original para no cambiar el comportamiento.
+# HikariCP, MySQL Connector/J y bcrypt se quitaron porque no se usaban;
+# se volverán a agregar cuando se conecte la base de datos (ver README).
+
+[versions]
+kotlin = "2.4.20"
+ktor = "3.6.0"
+kotlinx-serialization = "1.8.1"
+logback = "1.6.5"
+
+[libraries]
+# --- Servidor Ktor ---
+ktor-serverCore = { module = "io.ktor:ktor-server-core-jvm", version.ref = "ktor" }
+ktor-serverNetty = { module = "io.ktor:ktor-server-netty-jvm", version.ref = "ktor" }
+ktor-serverContentNegotiation = { module = "io.ktor:ktor-server-content-negotiation-jvm", version.ref = "ktor" }
+ktor-serverCors = { module = "io.ktor:ktor-server-cors-jvm", version.ref = "ktor" }
+ktor-serializationKotlinxJson = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
+kotlinx-serializationJson = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+logback = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+
+# --- Pruebas ---
+ktor-serverTestHost = { module = "io.ktor:ktor-server-test-host-jvm", version.ref = "ktor" }
+ktor-clientContentNegotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
+kotlin-testJunit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
+
+[plugins]
+kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlinSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+ktor = { id = "io.ktor.plugin", version.ref = "ktor" }

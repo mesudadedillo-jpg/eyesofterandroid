@@ -1,0 +1,9 @@
+# Archivos que Git no debe guardar: se generan solos o son de cada computadora.
+.gradle
+.kotlin
+build/
+.idea
+*.iml
+local.properties
+.DS_Store
+out/
