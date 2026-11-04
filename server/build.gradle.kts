@@ -18,8 +18,11 @@ dependencies {
     implementation(libs.ktor.serverNetty)
     implementation(libs.ktor.serverContentNegotiation)
     implementation(libs.ktor.serializationKotlinxJson)
+<<<<<<< HEAD
     implementation(libs.ktor.serverCors)
     implementation(libs.ktor.serverStatusPages)
+=======
+>>>>>>> 246dc26b750e0e02de53787808831b239e9ae02a
     implementation(libs.kotlinx.serializationJson)
     testImplementation(libs.ktor.serverTestHost)
     testImplementation(libs.ktor.clientContentNegotiation)
