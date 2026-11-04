@@ -18,6 +18,8 @@ fun Application.configureRouting() {
             call.respondText("Hello, Ktor Server!")
         }
 
-        authRoutes()
+        saludRoutes()   // GET /salud
+        authRoutes()    // POST /api/login
+        opticasRoutes() // GET /opticas/cercanas
     }
 }

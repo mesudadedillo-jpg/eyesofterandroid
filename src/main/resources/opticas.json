@@ -1,0 +1,10 @@
+[
+  { "id": 1, "nombre": "Óptica Tulancingo Centro", "direccion": "Av. Juárez 102, Centro", "ciudad": "Tulancingo", "codigoPostal": "43600", "lat": 20.0825, "lng": -98.3622, "telefono": "7757531234", "verificada": true },
+  { "id": 2, "nombre": "Optometría Visión Real", "direccion": "Calle Morelos 45", "ciudad": "Tulancingo", "codigoPostal": "43600", "lat": 20.0841, "lng": -98.3601, "telefono": "7757535678", "verificada": false },
+  { "id": 3, "nombre": "Óptica Devlyn Tulancingo", "direccion": "Plaza Bella Local 12", "ciudad": "Tulancingo", "codigoPostal": "43600", "lat": 20.0890, "lng": -98.3580, "telefono": "7757539999", "verificada": false },
+  { "id": 4, "nombre": "Óptica Visión Central", "direccion": "Av. Reforma 123", "ciudad": "CDMX", "codigoPostal": "06600", "lat": 19.432608, "lng": -99.133209, "telefono": "5555123456", "verificada": true },
+  { "id": 5, "nombre": "Óptica Salud Visual", "direccion": "Calle Juarez 456", "ciudad": "CDMX", "codigoPostal": "06600", "lat": 19.427015, "lng": -99.167671, "telefono": "5555987654", "verificada": false },
+  { "id": 6, "nombre": "Centro Oftálmico del Norte", "direccion": "Av. Insurgentes Sur 789", "ciudad": "CDMX", "codigoPostal": "03100", "lat": 19.380112, "lng": -99.172345, "telefono": "5555443322", "verificada": false },
+  { "id": 7, "nombre": "Óptica Clara Vista", "direccion": "Hidalgo 101", "ciudad": "Guadalajara", "codigoPostal": "44100", "lat": 20.676667, "lng": -103.3475, "telefono": "3336123456", "verificada": false },
+  { "id": 8, "nombre": "Optometría Moderna", "direccion": "Zaragoza 202", "ciudad": "Monterrey", "codigoPostal": "64000", "lat": 25.686614, "lng": -100.316113, "telefono": "8183123456", "verificada": false }
+]
