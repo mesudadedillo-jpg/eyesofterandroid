@@ -2,7 +2,9 @@
 
 Servidor de la app móvil de **EYESOFTER Suite**, el proyecto escolar de tamizaje
 visual para la Escuela Primaria-Secundaria METANOIA (Tulancingo, Hgo.).
-Recibe el inicio de sesión y entrega la lista de ópticas cercanas a la app.
+Recibe el inicio de sesión, entrega la lista de ópticas cercanas, recibe los
+resultados de tamizaje del sistema de escritorio y avisa a los tutores con
+notificaciones push (y correo de respaldo).
 
 - **Repositorio:** `https://github.com/mesudadedillo-jpg/eyesofterandroid`
 - **En producción:** `https://eyesofterandroid-production.up.railway.app` (Railway)
@@ -16,7 +18,7 @@ cuenta. El historial anterior quedó en el respaldo del repositorio original.
 
 ## Tecnologías
 
-Kotlin 2.4.20 · Ktor 3.6.0 (Netty) · kotlinx.serialization · Gradle 9.5.1 · Java 21 · Docker
+Kotlin 2.4.20 · Ktor 3.6.0 (Netty, JWT, cliente CIO) · kotlinx.serialization · Firebase Cloud Messaging (API HTTP v1) · Resend (correo) · Gradle 9.5.1 · Java 21 · Docker
 
 ## Estructura de carpetas
 
@@ -35,26 +37,49 @@ eyesofter-backend/
 └── src/
     ├── main/kotlin/com/example/eyesofterapp/
     │   ├── Application.kt      main(): lee PORT y arranca Netty; module(): junta todo
+    │   ├── Servicios.kt        Arma y conecta repositorios, canales, notificador y recordatorios
+    │   ├── config/
+    │   │   └── Configuracion.kt   Todas las variables de entorno en un solo lugar
     │   ├── plugins/            Funciones de Ktor que se instalan una vez
     │   │   ├── Serialization.kt   JSON ⇄ clases Kotlin
-    │   │   └── Cors.kt            Permite llamadas desde la versión web de la app
+    │   │   ├── Cors.kt            Permite llamadas desde la versión web de la app
+    │   │   ├── Security.kt        Crea y verifica el JWT; call.sesion() dice quién llama
+    │   │   └── Errores.kt         Excepciones → {"error": ...} con 400/500
     │   ├── routes/             Qué hace cada URL
-    │   │   ├── Routing.kt         Índice de rutas + GET /
+    │   │   ├── Routing.kt         Índice de rutas (públicas, escritorio y con sesión)
     │   │   ├── SaludRoutes.kt     GET /salud
     │   │   ├── AuthRoutes.kt      POST /api/login
-    │   │   └── OpticasRoutes.kt   GET /opticas/cercanas (con validación)
+    │   │   ├── OpticasRoutes.kt   GET /opticas/cercanas (con validación)
+    │   │   ├── NotificacionesRoutes.kt  Bandeja, lectura, avisos y seguimiento
+    │   │   ├── DispositivosRoutes.kt    Registro del token de push
+    │   │   ├── TamizajesRoutes.kt       Recepción desde escritorio y consulta del tutor
+    │   │   └── Conversiones.kt          Registros → DTOs, bitácora de auditoría
+    │   ├── notificaciones/     Cómo se le avisa a la gente
+    │   │   ├── CanalNotificacion.kt  Interfaz común (push, correo, y en el futuro SMS/WhatsApp)
+    │   │   ├── CanalPushFcm.kt       Firebase Cloud Messaging
+    │   │   ├── CanalCorreoResend.kt  Correo de respaldo
+    │   │   ├── Notificador.kt        Guarda en la bandeja y prueba los canales en orden
+    │   │   └── Recordatorios.kt      Reenvía avisos sin leer a los 3 días y alerta a Enfermería
     │   ├── data/               De dónde salen los datos (hoy archivos JSON)
     │   │   ├── UserRepository.kt  Lee users.json
     │   │   ├── OpticaRepository.kt Lee opticas.json, filtra y ordena
-    │   │   └── Distancia.kt       Fórmula de Haversine
+    │   │   ├── Distancia.kt       Fórmula de Haversine
+    │   │   ├── AlmacenJson.kt     Lista guardada en un archivo JSON (reemplazo provisional de tabla)
+    │   │   ├── NotificacionRepository.kt  Bandeja de todos los usuarios
+    │   │   ├── DispositivoRepository.kt   Tokens de push por usuario
+    │   │   └── TamizajeRepository.kt      Resultados recibidos del escritorio
     │   └── model/              Forma del JSON que viaja (copia del contrato)
     │       ├── AuthDtos.kt        LoginRequestDto, UserDto, LoginResponseDto
-    │       └── Optica.kt          Optica y SaludDto
+    │       ├── Optica.kt          Optica y SaludDto
+    │       ├── NotificacionDtos.kt Bandeja, dispositivos, avisos, seguimiento
+    │       └── TamizajeDtos.kt    Entrada del escritorio y lo que ve el tutor
     ├── main/resources/
-    │   ├── users.json          Usuarios de prueba (contraseñas en texto plano, ver Pendientes)
+    │   ├── users.json          Usuarios demo (contraseñas en texto plano, ver Pendientes). Campo "email" opcional
     │   ├── opticas.json        Catálogo de 8 ópticas
     │   └── logback.xml         Formato de los mensajes en consola
-    └── test/kotlin/...         Pruebas: ApplicationTest (login) y OpticasRoutesTest
+    └── test/
+        ├── kotlin/...          Pruebas: login, ópticas, notificaciones de punta a punta, canales
+        └── resources/users-test.json  Usuarios fijos de las pruebas (no dependen de users.json)
 ```
 
 La idea de la separación por carpetas: **`routes/` no sabe de dónde vienen los
@@ -99,6 +124,16 @@ curl -X POST http://localhost:8080/api/login -H "Content-Type: application/json"
 curl "http://localhost:8080/opticas/cercanas?lat=20.0825&lng=-98.3622"
 ```
 
+Probar el flujo de notificaciones (arranca con `ESCRITORIO_API_KEY=k123 ./gradlew run`):
+
+```bash
+# 1. El escritorio manda un resultado para el tutor "cliente"
+curl -X POST http://localhost:8080/api/escritorio/tamizajes -H "X-Api-Key: k123" -H "Content-Type: application/json" -d '{"folio":"F1","alumnoNombre":"Ana","tutorUsername":"cliente","fecha":"2026-11-18","semaforo":"VERDE"}'
+# 2. El tutor inicia sesión y ve su bandeja (copia el token de la respuesta del login)
+curl -X POST http://localhost:8080/api/login -H "Content-Type: application/json" -d '{"username":"cliente","password":"999"}'
+curl http://localhost:8080/api/notificaciones -H "Authorization: Bearer <token>"
+```
+
 ### 4. Construir el JAR (lo mismo que hace Docker)
 
 ```bash
@@ -112,6 +147,17 @@ java -jar build/libs/eyesofter-backend.jar
 |---|---|---|
 | `PORT` | Puerto donde escucha. Railway la asigna sola | `8080` |
 | `USERS_FILE` | Ruta a otro `users.json` | Busca `src/main/resources/users.json`; si no está (Docker), usa la copia dentro del JAR |
+| `JWT_SECRET` | Secreto para firmar las sesiones. **Obligatoria en Railway** (texto largo y aleatorio) | Genera uno temporal: todas las sesiones se pierden al reiniciar |
+| `JWT_DIAS` | Duración de la sesión | `30` |
+| `ESCRITORIO_API_KEY` | Clave que manda el sistema de escritorio en `X-Api-Key` | `POST /api/escritorio/tamizajes` responde 503 |
+| `DATA_DIR` | Carpeta de `notificaciones.json`, `dispositivos.json` y `tamizajes.json` | `data` (en Docker: `/app/data`) |
+| `FIREBASE_SERVICE_ACCOUNT` | **Contenido** del JSON de la cuenta de servicio de Firebase | Sin push (avisa en la consola al arrancar) |
+| `FIREBASE_SERVICE_ACCOUNT_FILE` | Alternativa: ruta a ese JSON | — |
+| `RESEND_API_KEY` | API key de [Resend](https://resend.com) para el correo de respaldo | Sin correo |
+| `CORREO_REMITENTE` | Remitente, p. ej. `EYESOFTER <avisos@tudominio.com>` (dominio verificado en Resend) | Sin correo |
+| `RECORDATORIO_DIAS` | Días sin leer antes de reenviar y alertar a Enfermería | `3` |
+| `RECORDATORIO_MAX` | Máximo de reenvíos por aviso | `3` |
+| `RECORDATORIO_REVISION_MIN` | Cada cuántos minutos se buscan avisos sin leer | `60` |
 
 ## Despliegue en Railway
 
@@ -124,6 +170,21 @@ construir. El `Dockerfile` tiene dos etapas:
    `java -jar`. La imagen final es más ligera y no lleva el código fuente.
 
 No hay que configurar comando de compilación ni de arranque en Railway.
+
+### Checklist para el despliegue con notificaciones
+
+1. **Variables** en Railway → servicio → *Variables*: `JWT_SECRET`, `ESCRITORIO_API_KEY`,
+   `FIREBASE_SERVICE_ACCOUNT` y, si habrá correo, `RESEND_API_KEY` y `CORREO_REMITENTE`.
+   Para generar secretos: `openssl rand -base64 32`.
+2. **Volumen** (sin esto, cada despliegue borra notificaciones, dispositivos y tamizajes):
+   Railway → servicio → *Settings* → *Volumes* → montar en `/app/data`.
+3. **Firebase** (el mismo proyecto que use la app):
+   consola de Firebase → ⚙ *Configuración del proyecto* → *Cuentas de servicio* →
+   *Generar nueva clave privada*. Pega el contenido completo del JSON en
+   `FIREBASE_SERVICE_ACCOUNT`. Para iOS, sube además la llave APNs en *Cloud Messaging*.
+   **Nunca subas ese JSON al repositorio.**
+4. Al arrancar, la consola de Railway no debe mostrar los avisos
+   `FIREBASE_SERVICE_ACCOUNT no está definida` ni `JWT_SECRET no está definida`.
 
 ## Cómo se conecta con la app
 
@@ -159,9 +220,12 @@ Las rutas (`routes/`) y los DTOs (`model/`) no cambian, así que la app no se en
 
 ## Pendientes conocidos
 
-- Contraseñas en texto plano en `users.json`, y ese archivo está en el repositorio.
-- El token es simulado (`jwt-mock-token-…`); ninguna ruta lo exige todavía.
+- Contraseñas en texto plano en `users.json`, y ese archivo está en el repositorio (C-RC-05 pide bcrypt).
+- Falta la relación tutor ↔ alumno: el escritorio indica el tutor con `tutorUsername`.
+  Cuando haya MySQL debería salir de una tabla de alumnos.
+- `users.json` no tiene correos todavía: sin `email` no hay correo de respaldo.
+- Los datos de notificaciones viven en archivos JSON (`DATA_DIR`), pensados para el piloto;
+  pasarán a MySQL junto con lo demás.
+- No hay bloqueo tras 3 intentos fallidos de login (C-RFNN-01) ni recuperación de contraseña (C-RFNN-02).
 - CORS permite cualquier dominio (`anyHost()`).
-- `logback.xml` está en nivel `trace`: la consola muestra muchísimos mensajes.
-- Un JSON inválido en `/api/login` responde 500; lo correcto sería 400.
 - El `Dockerfile` no se ha probado localmente (falta Docker en la computadora de desarrollo); Railway lo valida al desplegar.

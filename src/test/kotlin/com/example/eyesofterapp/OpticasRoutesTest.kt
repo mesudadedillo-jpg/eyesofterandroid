@@ -5,13 +5,11 @@ import com.example.eyesofterapp.model.Optica
 import com.example.eyesofterapp.model.SaludDto
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
-import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import kotlin.test.Test
@@ -25,10 +23,7 @@ class OpticasRoutesTest {
     private val tulancingoLat = 20.0825
     private val tulancingoLng = -98.3622
 
-    private fun ApplicationTestBuilder.jsonClient(): HttpClient {
-        application { module() }
-        return createClient { install(ContentNegotiation) { json() } }
-    }
+    private fun ApplicationTestBuilder.jsonClient(): HttpClient = servidor()
 
     /** Comprueba que la respuesta sea 400 y que el mensaje contenga el texto esperado. */
     private suspend fun assertError400(response: HttpResponse, textoEsperado: String) {

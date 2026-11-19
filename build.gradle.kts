@@ -40,9 +40,23 @@ dependencies {
     implementation(libs.ktor.serverContentNegotiation)
     implementation(libs.ktor.serializationKotlinxJson)
     implementation(libs.ktor.serverCors)
+    implementation(libs.ktor.serverStatusPages) // Errores → {"error": "..."} con el código correcto
+    implementation(libs.ktor.serverAuth)        // authenticate { } en las rutas
+    implementation(libs.ktor.serverAuthJwt)     // Tokens JWT firmados
     implementation(libs.kotlinx.serializationJson)
 
+    // Para que el servidor llame a Firebase (push) y a Resend (correo).
+    implementation(libs.ktor.clientCio)
+    implementation(libs.ktor.clientContentNegotiation)
+    implementation(libs.google.authOauth2)
+
     testImplementation(libs.ktor.serverTestHost)
-    testImplementation(libs.ktor.clientContentNegotiation)
+    testImplementation(libs.ktor.clientMock)
     testImplementation(libs.kotlin.testJunit)
+}
+
+tasks.test {
+    // Las pruebas usan sus propios usuarios fijos (src/test/resources/users-test.json)
+    // para no romperse cuando alguien cambia las contraseñas demo de users.json.
+    systemProperty("users.file", "src/test/resources/users-test.json")
 }
