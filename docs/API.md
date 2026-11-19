@@ -388,18 +388,18 @@ El tutor fotografía la receta o el comprobante de lentes (M-RFN-05) y Enfermer�
 
 ---
 
-## Lo que la app (`eyesofter-app`) debe agregar
+## Estado de la app (`eyesofter-app`) frente a este contrato
 
-1. Guardar el `token` del login y mandarlo en `Authorization: Bearer …` a las rutas 🔒.
-   Ante un **401** en esas rutas, cerrar sesión y volver al login.
-2. Integrar Firebase Cloud Messaging (proyecto de Firebase compartido con el servidor):
-   pedir permiso de notificaciones (Android 13+), crear el canal `eyesofter_avisos`,
-   y registrar el token con `POST /api/dispositivos` tras el login y en `onNewToken`.
-3. Al cerrar sesión: `DELETE /api/dispositivos?token=…`.
-4. Al tocar una push o una notificación de la bandeja: navegar a `datos.ruta` y llamar a
-   `POST /api/notificaciones/{id}/leida`.
-5. Al iniciar sesión: `GET /api/notificaciones` y mostrar las no leídas.
-6. Pantalla de resultado: `GET /api/tamizajes/{id}` con semáforo de color **más** `semaforoTexto` e icono.
+| Punto | Estado |
+|---|---|
+| Guardar el `token` y mandarlo en `Authorization: Bearer …`; ante 401 volver al login | ✅ `data/network/EyesApi.kt`, `data/session/SesionGuardada.kt` |
+| `GET /api/notificaciones` al iniciar sesión y cada minuto con la app abierta | ✅ `ui/PanelViewModel.kt` |
+| Al abrir una notificación: navegar a `datos.ruta` y `POST /api/notificaciones/{id}/leida` | ✅ `composeApp/navigation/AppNavHost.kt` |
+| Resultado con semáforo de color **más** `semaforoTexto` e icono | ✅ `composeApp/screens/TamizajeScreen.kt` |
+| Subir receta/comprobante (§11) con cámara o archivo | ✅ `TamizajeScreen.kt` + `androidApp/TelefonoAndroid.kt` |
+| Enfermería: seguimiento, revisión de comprobantes y avisos (§9, §11) | ✅ `composeApp/screens/PersonalScreens.kt` |
+| Mostrar el 429 del login (cuenta bloqueada) | ✅ `ui/AuthViewModel.kt` |
+| **Firebase Cloud Messaging**: permiso de notificaciones, canal `eyesofter_avisos`, `POST /api/dispositivos` tras el login y en `onNewToken`, `DELETE /api/dispositivos` al salir | ⏳ Pendiente (falta el proyecto de Firebase) |
 
 ---
 
