@@ -33,6 +33,12 @@ data class Configuracion(
     val recordatorioMax: Int = 3,
     /** Cada cuántos minutos se revisan los avisos sin leer. null = no se revisa solo (pruebas). */
     val recordatorioRevisionMin: Long? = 60,
+    /** Intentos fallidos seguidos antes de bloquear la cuenta (C-RFNN-01). */
+    val loginIntentosMax: Int = 3,
+    /** Minutos que dura el bloqueo. */
+    val loginBloqueoMin: Long = 15,
+    /** Commit desplegado; Railway lo pone en RAILWAY_GIT_COMMIT_SHA. */
+    val version: String = "dev",
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(Configuracion::class.java)
@@ -63,6 +69,9 @@ data class Configuracion(
                 recordatorioDias = texto("RECORDATORIO_DIAS")?.toLongOrNull() ?: 3,
                 recordatorioMax = texto("RECORDATORIO_MAX")?.toIntOrNull() ?: 3,
                 recordatorioRevisionMin = texto("RECORDATORIO_REVISION_MIN")?.toLongOrNull() ?: 60,
+                loginIntentosMax = texto("LOGIN_INTENTOS_MAX")?.toIntOrNull() ?: 3,
+                loginBloqueoMin = texto("LOGIN_BLOQUEO_MIN")?.toLongOrNull() ?: 15,
+                version = texto("RAILWAY_GIT_COMMIT_SHA")?.take(7) ?: "dev",
             )
         }
     }

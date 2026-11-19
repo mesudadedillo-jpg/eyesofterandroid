@@ -46,3 +46,24 @@ data class TamizajeDto(
     val semaforoTexto: String,
     val observaciones: String,
 )
+
+/** Un comprobante como lo ven la app y el portal (docs/API.md §11). */
+@Serializable
+data class ComprobanteDto(
+    val id: String,
+    val tamizajeId: String,
+    val tutor: String,
+    /** RECETA o COMPROBANTE_LENTES. */
+    val tipo: String,
+    val contentType: String,
+    val tamanoBytes: Int,
+    val subidoEn: String,
+    /** PENDIENTE, APROBADO o RECHAZADO. */
+    val estado: String,
+    val revisadoEn: String? = null,
+    val motivoRechazo: String? = null,
+)
+
+/** Cuerpo de POST /api/comprobantes/{id}/revision (Enfermería). */
+@Serializable
+data class RevisionComprobanteDto(val aprobado: Boolean, val motivo: String? = null)

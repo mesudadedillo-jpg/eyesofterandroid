@@ -7,6 +7,7 @@ import com.example.eyesofterapp.plugins.configureSecurity
 import com.example.eyesofterapp.plugins.configureSerialization
 import com.example.eyesofterapp.routes.configureRouting
 import io.ktor.server.application.Application
+import io.ktor.server.application.ApplicationStopped
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 
@@ -33,6 +34,7 @@ fun Application.module() {
     val servicios = Servicios(config, scope = this)
     modulo(servicios)
     config.recordatorioRevisionMin?.let { servicios.recordatorios.iniciar(this, it) }
+    monitor.subscribe(ApplicationStopped) { servicios.cerrar() }
 }
 
 /**

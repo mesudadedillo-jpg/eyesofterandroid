@@ -1,6 +1,8 @@
 package com.example.eyesofterapp
 
 import com.example.eyesofterapp.config.Configuracion
+import com.example.eyesofterapp.data.BloqueoLogin
+import com.example.eyesofterapp.data.ComprobanteRepository
 import com.example.eyesofterapp.data.DispositivoRepository
 import com.example.eyesofterapp.data.NotificacionRepository
 import com.example.eyesofterapp.data.TamizajeRepository
@@ -41,7 +43,7 @@ class Servicios(
     val tamizajes = TamizajeRepository(config.dataDir?.let { File(it, "tamizajes.json") })
 
     /** Cliente HTTP para hablar con Firebase y Resend. Se crea solo si algún canal lo usa. */
-    private val http: HttpClient by lazy {
+    private val httpCreado = lazy {
         HttpClient(CIO) {
             install(HttpTimeout) {
                 requestTimeoutMillis = 15_000
@@ -49,11 +51,28 @@ class Servicios(
             }
         }
     }
+    private val http: HttpClient by httpCreado
+
+    /** Se llama al apagar el servidor. */
+    fun cerrar() {
+        if (httpCreado.isInitialized()) http.close()
+    }
+
+    private val listaCanales: List<CanalNotificacion> = canales?.invoke(dispositivos) ?: canalesReales()
+
+    /** Nombres de los canales que sí quedaron configurados ("push", "correo"). Los muestra /salud. */
+    val canalesActivos: List<String> = listaCanales.map { it.nombre }
+
+    val bloqueoLogin = BloqueoLogin(config.loginIntentosMax, config.loginBloqueoMin, reloj)
+    val comprobantes = ComprobanteRepository(
+        archivo = config.dataDir?.let { File(it, "comprobantes.json") },
+        carpetaArchivos = config.dataDir?.let { File(it, "comprobantes") },
+    )
 
     val notificador = Notificador(
         repo = notificaciones,
         buscarUsuario = usuarios::findByUsername,
-        canales = canales?.invoke(dispositivos) ?: canalesReales(),
+        canales = listaCanales,
         scope = scope,
         reloj = reloj,
     )

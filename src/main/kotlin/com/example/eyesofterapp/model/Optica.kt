@@ -31,5 +31,11 @@ data class Optica(
 @Serializable
 data class SaludDto(
     val status: String,
-    val db: Boolean
+    val db: Boolean,
+    /** Commit desplegado (Railway lo da en RAILWAY_GIT_COMMIT_SHA). "dev" en local. */
+    val version: String = "dev",
+    /** Qué está configurado en el servidor. Sirve para revisar Railway sin entrar al panel. */
+    val push: Boolean = false,
+    val correo: Boolean = false,
+    val escritorio: Boolean = false,
 )

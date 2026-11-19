@@ -26,6 +26,13 @@ FROM eclipse-temurin:21-jre
 WORKDIR /app
 COPY --from=build /app/build/libs/eyesofter-backend.jar ./eyesofter-backend.jar
 
+# Aquí se monta el volumen de Railway (Settings → Volumes → /app/data).
+# Sin volumen, la carpeta existe pero se borra en cada despliegue.
+ENV DATA_DIR=/app/data
+RUN mkdir -p /app/data
+
 # Solo es informativo: Railway define PORT y el servidor lo lee.
 EXPOSE 8080
-CMD ["java", "-jar", "eyesofter-backend.jar"]
+# MaxRAMPercentage: Java usa hasta el 75 % de la memoria que Railway le da al
+# contenedor, en vez de calcularla sobre la de toda la máquina.
+CMD ["java", "-XX:MaxRAMPercentage=75", "-jar", "eyesofter-backend.jar"]

@@ -38,7 +38,12 @@ class OpticasRoutesTest {
     fun saludRespondeOkSinBaseDeDatos() = testApplication {
         val response = jsonClient().get("/salud")
         assertEquals(HttpStatusCode.OK, response.status)
-        assertEquals(SaludDto(status = "ok", db = false), response.body<SaludDto>())
+        val salud = response.body<SaludDto>()
+        assertEquals("ok", salud.status)
+        assertEquals(false, salud.db)
+        assertEquals("dev", salud.version)
+        assertEquals(true, salud.escritorio) // configPrueba() trae ESCRITORIO_API_KEY
+        assertEquals(false, salud.push)
     }
 
     // ---------- Fórmula de Haversine ----------

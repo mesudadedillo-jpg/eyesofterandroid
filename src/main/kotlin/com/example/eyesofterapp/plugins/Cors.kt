@@ -19,5 +19,6 @@ fun Application.configureCors() {
         allowMethod(HttpMethod.Options)
         allowMethod(HttpMethod.Post)
         allowMethod(HttpMethod.Get)
+        allowMethod(HttpMethod.Delete) // DELETE /api/dispositivos al cerrar sesión
     }
 }

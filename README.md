@@ -33,6 +33,7 @@ eyesofter-backend/
 │   └── wrapper/                Descarga la versión correcta de Gradle (no hay que instalarlo)
 ├── gradlew / gradlew.bat       Ejecutan Gradle (bash / cmd)
 ├── Dockerfile                  Cómo construir la imagen que corre en Railway
+├── railway.json                Configuración de Railway: usar el Dockerfile, healthcheck en /salud, reinicio si falla
 ├── docs/API.md                 Contrato con la app
 └── src/
     ├── main/kotlin/com/example/eyesofterapp/
@@ -53,6 +54,7 @@ eyesofter-backend/
     │   │   ├── NotificacionesRoutes.kt  Bandeja, lectura, avisos y seguimiento
     │   │   ├── DispositivosRoutes.kt    Registro del token de push
     │   │   ├── TamizajesRoutes.kt       Recepción desde escritorio y consulta del tutor
+    │   │   ├── ComprobantesRoutes.kt    Subida de recetas/comprobantes y su revisión
     │   │   └── Conversiones.kt          Registros → DTOs, bitácora de auditoría
     │   ├── notificaciones/     Cómo se le avisa a la gente
     │   │   ├── CanalNotificacion.kt  Interfaz común (push, correo, y en el futuro SMS/WhatsApp)
@@ -67,7 +69,9 @@ eyesofter-backend/
     │   │   ├── AlmacenJson.kt     Lista guardada en un archivo JSON (reemplazo provisional de tabla)
     │   │   ├── NotificacionRepository.kt  Bandeja de todos los usuarios
     │   │   ├── DispositivoRepository.kt   Tokens de push por usuario
-    │   │   └── TamizajeRepository.kt      Resultados recibidos del escritorio
+    │   │   ├── TamizajeRepository.kt      Resultados recibidos del escritorio
+    │   │   ├── ComprobanteRepository.kt   Recetas y comprobantes (archivos en DATA_DIR/comprobantes/)
+    │   │   └── BloqueoLogin.kt            Bloqueo tras 3 intentos fallidos
     │   └── model/              Forma del JSON que viaja (copia del contrato)
     │       ├── AuthDtos.kt        LoginRequestDto, UserDto, LoginResponseDto
     │       ├── Optica.kt          Optica y SaludDto
@@ -158,6 +162,9 @@ java -jar build/libs/eyesofter-backend.jar
 | `RECORDATORIO_DIAS` | Días sin leer antes de reenviar y alertar a Enfermería | `3` |
 | `RECORDATORIO_MAX` | Máximo de reenvíos por aviso | `3` |
 | `RECORDATORIO_REVISION_MIN` | Cada cuántos minutos se buscan avisos sin leer | `60` |
+| `LOGIN_INTENTOS_MAX` | Intentos fallidos seguidos antes de bloquear | `3` |
+| `LOGIN_BLOQUEO_MIN` | Minutos de bloqueo | `15` |
+| `RAILWAY_GIT_COMMIT_SHA` | La pone Railway sola; `/salud` la muestra como `version` | `dev` |
 
 ## Despliegue en Railway
 
@@ -169,7 +176,19 @@ construir. El `Dockerfile` tiene dos etapas:
 2. **ejecución** — con solo un JRE 21 copia ese JAR y lo arranca con
    `java -jar`. La imagen final es más ligera y no lleva el código fuente.
 
-No hay que configurar comando de compilación ni de arranque en Railway.
+No hay que configurar comando de compilación ni de arranque en Railway: `railway.json`
+le dice que use el `Dockerfile`, que revise `GET /salud` antes de dar por bueno un
+despliegue (si el servidor no arranca, Railway mantiene la versión anterior) y que
+lo reinicie si se cae.
+
+**Railway despliega la rama `main`.** Lo que esté en otras ramas no llega a
+producción hasta que se fusione. Para confirmar qué versión está corriendo:
+
+```bash
+curl https://eyesofterandroid-production.up.railway.app/salud
+```
+
+`version` debe coincidir con los primeros 7 caracteres del último commit de `main`.
 
 ### Checklist para el despliegue con notificaciones
 
@@ -226,6 +245,7 @@ Las rutas (`routes/`) y los DTOs (`model/`) no cambian, así que la app no se en
 - `users.json` no tiene correos todavía: sin `email` no hay correo de respaldo.
 - Los datos de notificaciones viven en archivos JSON (`DATA_DIR`), pensados para el piloto;
   pasarán a MySQL junto con lo demás.
-- No hay bloqueo tras 3 intentos fallidos de login (C-RFNN-01) ni recuperación de contraseña (C-RFNN-02).
+- No hay recuperación de contraseña por correo (C-RFNN-02).
+- Falta el pase médico con código QR (C-RFN-05) y el registro de atenciones de las clínicas.
 - CORS permite cualquier dominio (`anyHost()`).
 - El `Dockerfile` no se ha probado localmente (falta Docker en la computadora de desarrollo); Railway lo valida al desplegar.

@@ -64,10 +64,13 @@ Indica si el servidor y la base de datos están disponibles.
 **200 OK**
 
 ```json
-{ "status": "ok", "db": false }
+{ "status": "ok", "db": false, "version": "a1b2c3d", "push": true, "correo": false, "escritorio": true }
 ```
 
 - `db` es `false` mientras no haya base de datos conectada. Cuando se conecte MySQL será `true` si responde.
+- `version`: commit desplegado en Railway (`dev` en local). Sirve para confirmar qué código está en producción.
+- `push` / `correo` / `escritorio`: si el servidor tiene configurados Firebase, Resend y `ESCRITORIO_API_KEY`.
+- Railway la usa como *healthcheck* (`railway.json`): si no responde, no da por bueno el despliegue.
 - La app la consulta cuando el login falla por timeout o conexión, para distinguir "servidor caído" de "servidor lento".
 
 ## 3. `POST /api/login`
@@ -92,6 +95,7 @@ Inicia sesión.
 | 200 | Credenciales correctas | `LoginResponseDto` (abajo) |
 | 400 | `password` vacío | `{"error": "Contraseña requerida"}` |
 | 401 | Usuario no existe o contraseña incorrecta | `{"error": "Credenciales inválidas"}` |
+| 429 | 3 intentos fallidos seguidos: cuenta bloqueada 15 min (C-RFNN-01) | `{"error": "Cuenta bloqueada por intentos fallidos. Intenta de nuevo en 15 min."}` |
 | 400 | El cuerpo no es JSON válido o falta un campo | `{"error": "Cuerpo de la petición inválido: …"}` |
 
 **200 OK** — `LoginResponseDto`
@@ -209,9 +213,9 @@ permitido las push (M-RFNN-04), y al abrir la pantalla de notificaciones.
 
 | Campo | Tipo | Notas |
 |---|---|---|
-| `tipo` | String | `RESULTADO_TAMIZAJE` (tutor), `ALERTA_ENFERMERIA` (Enfermería), `AVISO` (aviso libre) |
+| `tipo` | String | `RESULTADO_TAMIZAJE` (tutor), `ALERTA_ENFERMERIA` (Enfermería), `AVISO` (aviso libre), `COMPROBANTE_RECIBIDO` (Enfermería), `COMPROBANTE_REVISADO` (tutor) |
 | `datos` | Map<String,String> | Siempre trae `ruta`. Puede traer `tamizajeId`, `alumno`, `tutor`, `notificacionId` |
-| `datos.ruta` | String | A dónde navegar al tocarla: `tamizaje/<id>`, `seguimiento` o `notificacion/<id>` |
+| `datos.ruta` | String | A dónde navegar al tocarla: `tamizaje/<id>`, `seguimiento`, `comprobantes` o `notificacion/<id>` |
 | `leidaEn` | String o null | `null` = sin leer |
 
 ## 6. Confirmación de lectura 🔒
@@ -343,6 +347,45 @@ Cuerpo `TamizajeEntradaDto`:
 
 Como el folio evita duplicados, el escritorio puede reintentar sin miedo si no recibe respuesta (C-RFNN-03).
 
+## 11. Recetas y comprobantes 🔒
+
+El tutor fotografía la receta o el comprobante de lentes (M-RFN-05) y Enfermería lo valida.
+
+**`POST /api/comprobantes`** (solo `CLIENTE`) — `multipart/form-data` con:
+
+| Campo | Valor |
+|---|---|
+| `tamizajeId` | Id de un tamizaje del propio tutor |
+| `tipo` | `RECETA` o `COMPROBANTE_LENTES` |
+| `archivo` | La foto (JPG, PNG, WEBP) o PDF. **Máximo 10 MB**. El tipo se reconoce por el contenido, no por el nombre |
+
+| Código | Cuándo |
+|---|---|
+| 201 | Guardado; Enfermería recibe una notificación `COMPROBANTE_RECIBIDO`. Cuerpo: `ComprobanteDto` |
+| 400 | Falta `archivo` o `tipo` inválido |
+| 403 | Quien sube no es tutor |
+| 404 | El tamizaje no existe o no es suyo |
+| 413 | Más de 10 MB → `{"error": "El archivo pesa más de 10 MB…"}` |
+| 415 | No es imagen ni PDF → `{"error": "Solo se aceptan fotos (JPG, PNG, WEBP) o PDF"}` |
+
+`ComprobanteDto`:
+
+```json
+{
+  "id": "…", "tamizajeId": "…", "tutor": "cliente", "tipo": "RECETA",
+  "contentType": "image/jpeg", "tamanoBytes": 345678, "subidoEn": "2026-11-19T…Z",
+  "estado": "PENDIENTE", "revisadoEn": null, "motivoRechazo": null
+}
+```
+
+`estado`: `PENDIENTE`, `APROBADO` o `RECHAZADO`.
+
+| Ruta | Quién | Qué hace |
+|---|---|---|
+| `GET /api/comprobantes?estado=PENDIENTE` | Tutor: los suyos. Personal escolar: todos | Lista de `ComprobanteDto` (`estado` opcional) |
+| `GET /api/comprobantes/{id}/archivo` | Dueño o personal escolar | El archivo tal cual, con su `Content-Type` · 404 si no le corresponde |
+| `POST /api/comprobantes/{id}/revision` | Personal escolar | Cuerpo `{"aprobado": false, "motivo": "La foto está borrosa"}`. El motivo es obligatorio al rechazar. Avisa al tutor (`COMPROBANTE_REVISADO`). **409** si ya estaba revisado |
+
 ---
 
 ## Lo que la app (`eyesofter-app`) debe agregar
@@ -365,4 +408,5 @@ Como el folio evita duplicados, el escritorio puede reintentar sin miedo si no r
 | Fecha | Cambio |
 |---|---|
 | 2026-11-03 | Separación en dos proyectos. Se implementan `/salud` y `/opticas/cercanas` en el servidor; se documentan errores, parámetros y campos. |
+| 2026-11-19 (b) | `/salud` agrega `version`, `push`, `correo`, `escritorio`. Login responde 429 tras 3 fallos. Nueva §11: recetas y comprobantes. CORS permite `DELETE`. |
 | 2026-11-19 | El `token` del login ahora es un JWT real. JSON inválido en el login responde 400 (antes 500). Nuevas rutas §5-§10: notificaciones, confirmación de lectura, dispositivos, tamizajes, avisos, seguimiento y recepción desde el escritorio. |

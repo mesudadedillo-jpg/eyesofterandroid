@@ -19,7 +19,7 @@ fun Application.configureRouting(servicios: Servicios) {
         }
 
         // --- Públicas ---
-        saludRoutes()                 // GET /salud
+        saludRoutes(servicios)        // GET /salud
         authRoutes(servicios)         // POST /api/login
         opticasRoutes()               // GET /opticas/cercanas
 
@@ -31,6 +31,7 @@ fun Application.configureRouting(servicios: Servicios) {
             notificacionesRoutes(servicios) // /api/notificaciones...
             dispositivosRoutes(servicios)   // /api/dispositivos
             tamizajesRoutes(servicios)      // GET /api/tamizajes...
+            comprobantesRoutes(servicios)   // /api/comprobantes...
         }
     }
 }
