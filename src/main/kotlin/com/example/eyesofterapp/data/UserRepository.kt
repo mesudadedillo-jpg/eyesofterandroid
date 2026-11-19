@@ -14,7 +14,9 @@ data class UserRecord(
     val username: String,
     val password: String,
     val fullName: String,
-    val role: String
+    val role: String,
+    /** Opcional. Se usa como aviso alternativo cuando la push no llega (M-RFNN-04). */
+    val email: String? = null
 )
 
 /**
@@ -31,13 +33,15 @@ object UserRepository {
 
     /**
      * Busca users.json en disco, en este orden:
-     *  1. La ruta que diga la variable de entorno USERS_FILE (útil en Railway).
-     *  2. src/main/resources/users.json (cuando corres ./gradlew run desde la raíz).
+     *  1. La propiedad del sistema users.file (las pruebas la usan, ver build.gradle.kts).
+     *  2. La ruta que diga la variable de entorno USERS_FILE (útil en Railway).
+     *  3. src/main/resources/users.json (cuando corres ./gradlew run desde la raíz).
      * En el proyecto original también se probaba "server/src/main/resources/users.json";
      * esa ruta ya no existe porque ahora el servidor está en la raíz.
      */
     private fun findUsersFile(): File? {
         val candidates = listOfNotNull(
+            System.getProperty("users.file"),
             System.getenv("USERS_FILE"),
             "src/main/resources/users.json"
         )
@@ -54,7 +58,6 @@ object UserRepository {
         val file = findUsersFile()
         return try {
             val content = if (file != null) {
-                println("Leyendo usuarios desde: ${file.absolutePath}")
                 file.readText(Charsets.UTF_8)
             } else {
                 println("users.json no encontrado en disco; usando la copia empaquetada")
@@ -72,4 +75,8 @@ object UserRepository {
     /** Busca un usuario por nombre sin importar mayúsculas/minúsculas. */
     fun findByUsername(username: String): UserRecord? =
         loadUsers().firstOrNull { it.username.equals(username, ignoreCase = true) }
+
+    /** Todos los usuarios con un rol (p. ej. "SUPERVISOR" = Enfermería). */
+    fun findByRole(role: String): List<UserRecord> =
+        loadUsers().filter { it.role.equals(role, ignoreCase = true) }
 }

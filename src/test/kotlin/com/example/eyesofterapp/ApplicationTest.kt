@@ -4,7 +4,6 @@ import com.example.eyesofterapp.model.LoginRequestDto
 import com.example.eyesofterapp.model.LoginResponseDto
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -12,7 +11,6 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
-import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import kotlin.test.Test
@@ -22,17 +20,11 @@ import kotlin.test.assertTrue
 /**
  * Pruebas del servidor. testApplication levanta el servidor EN MEMORIA
  * (sin abrir un puerto real) y le hace peticiones como si fuera la app.
- * Usan los usuarios de src/main/resources/users.json.
+ * Usan los usuarios fijos de src/test/resources/users-test.json.
  */
 class ApplicationTest {
 
-    /** Crea un cliente que sabe enviar y leer JSON. */
-    private fun ApplicationTestBuilder.jsonClient(): HttpClient {
-        application { module() }
-        return createClient {
-            install(ContentNegotiation) { json() }
-        }
-    }
+    private fun ApplicationTestBuilder.jsonClient(): HttpClient = servidor()
 
     @Test
     fun raizResponde() = testApplication {
@@ -52,7 +44,8 @@ class ApplicationTest {
         val dto = response.body<LoginResponseDto>()
         assertEquals("admin", dto.user.username)
         assertEquals("ADMINISTRADOR", dto.user.role)
-        assertTrue(dto.token.startsWith("jwt-mock-token-"))
+        // Un JWT tiene tres partes separadas por puntos.
+        assertEquals(3, dto.token.split(".").size)
     }
 
     @Test
@@ -75,5 +68,15 @@ class ApplicationTest {
 
         assertEquals(HttpStatusCode.BadRequest, response.status)
         assertTrue(response.bodyAsText().contains("Contraseña requerida"))
+    }
+
+    @Test
+    fun loginConJsonInvalidoDevuelve400() = testApplication {
+        val response = jsonClient().post("/api/login") {
+            contentType(ContentType.Application.Json)
+            setBody("{esto no es json")
+        }
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertTrue(response.bodyAsText().contains("error"))
     }
 }
