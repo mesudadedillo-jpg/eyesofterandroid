@@ -57,6 +57,12 @@ data class Configuracion(
         fun desdeEntorno(env: (String) -> String? = System::getenv): Configuracion {
             fun texto(nombre: String) = env(nombre)?.takeIf { it.isNotBlank() }
             val produccion = texto("RAILWAY_ENVIRONMENT") != null || texto("ENTORNO") == "produccion"
+            val faltan = listOf("DATABASE_URL", "JWT_SECRET", "EYESOFTER_CLAVE_DATOS").filter { texto(it) == null }
+            if (produccion && faltan.isNotEmpty()) {
+                // Mensaje claro en los Deploy Logs de Railway antes de detenerse.
+                log.error("FALTAN VARIABLES en Railway → servicio → Variables: ${faltan.joinToString()}. Ver README, \"Checklist de despliegue\".")
+                if ("DATABASE_URL" in faltan) error("Falta DATABASE_URL: agrega la referencia \${{Postgres.DATABASE_URL}}.")
+            }
 
             val secreto = texto("JWT_SECRET") ?: run {
                 if (produccion) error("Falta JWT_SECRET: sin ella cualquier reinicio invalida las sesiones y no es seguro.")

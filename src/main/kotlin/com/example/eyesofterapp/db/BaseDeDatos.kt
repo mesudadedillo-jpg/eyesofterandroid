@@ -67,6 +67,10 @@ class BaseDeDatos(val fuente: DataSource) {
             }
             config.maximumPoolSize = maxConexiones
             config.poolName = "eyesofter"
+            // No falla al arrancar si la base aún no responde (Railway levanta los servicios en
+            // paralelo): el servidor arranca, /salud dice "degradado" y se conecta en cuanto pueda.
+            config.initializationFailTimeout = -1
+            config.connectionTimeout = 10_000
             return BaseDeDatos(HikariDataSource(config))
         }
     }
