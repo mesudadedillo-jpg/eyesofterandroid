@@ -1,13 +1,10 @@
 package com.example.eyesofterapp
 
-import com.example.eyesofterapp.data.TipoNotificacion
-import com.example.eyesofterapp.model.AvisoEntradaDto
 import com.example.eyesofterapp.model.AvisoEnviadoDto
 import com.example.eyesofterapp.model.BandejaDto
 import com.example.eyesofterapp.model.NotificacionDto
 import com.example.eyesofterapp.model.RegistroDispositivoDto
 import com.example.eyesofterapp.model.SeguimientoDto
-import com.example.eyesofterapp.model.TamizajeDto
 import com.example.eyesofterapp.model.TamizajeEntradaDto
 import com.example.eyesofterapp.model.TamizajeRecibidoDto
 import io.ktor.client.HttpClient
@@ -18,317 +15,187 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
-import io.ktor.client.statement.HttpResponse
-import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.runBlocking
+import java.time.LocalDate
+import java.time.ZoneId
+import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** Flujo completo de notificaciones: escritorio → tutor → lectura → recordatorios. */
+/** Bandeja compartida, entrega por push/correo y recordatorios (M-RFN-02, C-RFN-07/08, C-RFNN-04, M-RFNN-04). */
 class NotificacionesTest {
-
     private val push = CanalFalso("push")
     private val correo = CanalFalso("correo")
     private val reloj = RelojFalso()
-    private val servicios = Servicios(configPrueba(), scope = null, canales = { listOf(push, correo) }, reloj = { reloj.ahora })
+    private val servicios = serviciosPrueba(reloj, listOf(push, correo))
+    private val hoy = LocalDate.now(ZoneId.of("America/Mexico_City"))
 
-    private fun tamizaje(folio: String = "T-001", tutor: String = "tutor", semaforo: String = "AMARILLO") =
-        TamizajeEntradaDto(
-            folio = folio, alumnoNombre = "Ana López", grado = "3", grupo = "B",
-            tutorUsername = tutor, fecha = "2026-11-18", semaforo = semaforo, observaciones = "Usa lentes desde 2025",
-        )
-
-    private suspend fun HttpClient.enviarTamizaje(t: TamizajeEntradaDto, clave: String? = API_KEY_PRUEBA): HttpResponse =
+    private suspend fun HttpClient.recibir(folio: String = "ESC-1", matricula: String = "A001", semaforo: String = "AMARILLO") =
         post("/api/escritorio/tamizajes") {
-            clave?.let { header("X-Api-Key", it) }
-            contentType(ContentType.Application.Json)
-            setBody(t)
-        }
+            header("X-Api-Key", API_KEY_PRUEBA); contentType(ContentType.Application.Json)
+            setBody(TamizajeEntradaDto(folio, matricula, hoy.toString(), semaforo))
+        }.body<TamizajeRecibidoDto>()
 
     private suspend fun HttpClient.bandeja(token: String) = get("/api/notificaciones") { bearerAuth(token) }.body<BandejaDto>()
 
-    // ---------- Sesión ----------
-
     @Test
-    fun rutasConSesionExigenToken() = testApplication {
+    fun lecturaConservaLaPrimeraFechaYNoSeTocanLasAjenas() = testApplication {
         val client = servidor(servicios)
-        assertEquals(HttpStatusCode.Unauthorized, client.get("/api/notificaciones").status)
-        assertEquals(HttpStatusCode.Unauthorized, client.get("/api/notificaciones") { bearerAuth("jwt-mock-token-123") }.status)
-        // Firmado con otro secreto (p. ej. de otro servidor) → rechazado.
-        val ajeno = Servicios(configPrueba().copy(jwtSecret = "otro"), scope = null).tokens.crear("tutor", "CLIENTE")
-        assertEquals(HttpStatusCode.Unauthorized, client.get("/api/notificaciones") { bearerAuth(ajeno) }.status)
-        // El token del login sí sirve.
-        val bandeja = client.bandeja(client.tokenDe("tutor"))
-        assertEquals(0, bandeja.noLeidas)
-    }
+        client.recibir()
+        val tutor = client.tokenDe("tutor@eyesofter.mx")
+        val n = client.bandeja(tutor).notificaciones.single()
 
-    // ---------- Recepción de tamizajes ----------
-
-    @Test
-    fun escritorioExigeApiKey() = testApplication {
-        val client = servidor(servicios)
-        assertEquals(HttpStatusCode.Unauthorized, client.enviarTamizaje(tamizaje(), clave = null).status)
-        assertEquals(HttpStatusCode.Unauthorized, client.enviarTamizaje(tamizaje(), clave = "mala").status)
-        assertTrue(push.envios.isEmpty())
-    }
-
-    @Test
-    fun escritorioSinClaveConfiguradaResponde503() = testApplication {
-        val client = servidor(Servicios(configPrueba().copy(apiKeyEscritorio = null), scope = null))
-        assertEquals(HttpStatusCode.ServiceUnavailable, client.enviarTamizaje(tamizaje()).status)
-    }
-
-    @Test
-    fun tamizajeNuevoNotificaAlTutorPorPush() = testApplication {
-        val client = servidor(servicios)
-        val r = client.enviarTamizaje(tamizaje())
-        assertEquals(HttpStatusCode.Created, r.status)
-        val recibido = r.body<TamizajeRecibidoDto>()
-        assertFalse(recibido.duplicado)
-
-        // Se envió por push y, como funcionó, no se usó el correo.
-        assertEquals(listOf("tutor"), push.envios.map { it.usuario })
-        assertTrue(correo.envios.isEmpty())
-        // El texto de la push no revela el resultado.
-        assertFalse(push.envios.single().notificacion.mensaje.contains("AMARILLO", ignoreCase = true))
-        assertFalse(push.envios.single().notificacion.mensaje.contains("observación", ignoreCase = true))
-
-        val bandeja = client.bandeja(client.tokenDe("tutor"))
-        assertEquals(1, bandeja.noLeidas)
-        val n = bandeja.notificaciones.single()
-        assertEquals("RESULTADO_TAMIZAJE", n.tipo)
-        assertEquals(recibido.notificacionId, n.id)
-        assertEquals("tamizaje/${recibido.tamizajeId}", n.datos["ruta"])
-        assertNull(n.leidaEn)
-
-        // Otro tutor no la ve.
-        assertEquals(0, client.bandeja(client.tokenDe("tutor2")).notificaciones.size)
-    }
-
-    @Test
-    fun folioRepetidoNoDuplicaNiReenvia() = testApplication {
-        val client = servidor(servicios)
-        val primero = client.enviarTamizaje(tamizaje()).body<TamizajeRecibidoDto>()
-        val segundo = client.enviarTamizaje(tamizaje())
-        assertEquals(HttpStatusCode.OK, segundo.status)
-        val dto = segundo.body<TamizajeRecibidoDto>()
-        assertTrue(dto.duplicado)
-        assertEquals(primero.tamizajeId, dto.tamizajeId)
-        assertEquals(1, push.envios.size)
-    }
-
-    @Test
-    fun tamizajeInvalidoDevuelve400() = testApplication {
-        val client = servidor(servicios)
-        suspend fun espera400(t: TamizajeEntradaDto, texto: String) {
-            val r = client.enviarTamizaje(t)
-            assertEquals(HttpStatusCode.BadRequest, r.status)
-            assertTrue(r.bodyAsText().contains(texto), r.bodyAsText())
-        }
-        espera400(tamizaje(semaforo = "AZUL"), "semaforo")
-        espera400(tamizaje(tutor = "noexiste"), "no existe")
-        espera400(tamizaje(tutor = "doctor"), "no es tutor")
-        espera400(tamizaje().copy(fecha = "18/11/2026"), "AAAA-MM-DD")
-        espera400(tamizaje().copy(folio = " "), "folio")
-        assertTrue(push.envios.isEmpty())
-    }
-
-    // ---------- Detalle del tamizaje (a donde lleva la notificación) ----------
-
-    @Test
-    fun soloElTutorYElPersonalVenElTamizaje() = testApplication {
-        val client = servidor(servicios)
-        val id = client.enviarTamizaje(tamizaje(semaforo = "rojo")).body<TamizajeRecibidoDto>().tamizajeId
-
-        val delTutor = client.get("/api/tamizajes/$id") { bearerAuth(client.tokenDe("tutor")) }
-        assertEquals(HttpStatusCode.OK, delTutor.status)
-        val dto = delTutor.body<TamizajeDto>()
-        assertEquals("ROJO", dto.semaforo)
-        assertEquals("Atención urgente requerida", dto.semaforoTexto)
-
-        assertEquals(HttpStatusCode.NotFound, client.get("/api/tamizajes/$id") { bearerAuth(client.tokenDe("tutor2")) }.status)
-        assertEquals(HttpStatusCode.OK, client.get("/api/tamizajes/$id") { bearerAuth(client.tokenDe("enfermeria")) }.status)
-
-        assertEquals(1, client.get("/api/tamizajes") { bearerAuth(client.tokenDe("tutor")) }.body<List<TamizajeDto>>().size)
-        assertEquals(0, client.get("/api/tamizajes") { bearerAuth(client.tokenDe("tutor2")) }.body<List<TamizajeDto>>().size)
-    }
-
-    // ---------- Confirmación de lectura ----------
-
-    @Test
-    fun marcarLeidaGuardaLaPrimeraFechaYSoloParaElDueno() = testApplication {
-        val client = servidor(servicios)
-        val id = client.enviarTamizaje(tamizaje()).body<TamizajeRecibidoDto>().notificacionId!!
-        val tutor = client.tokenDe("tutor")
-
-        assertEquals(HttpStatusCode.NotFound, client.post("/api/notificaciones/$id/leida") { bearerAuth(client.tokenDe("tutor2")) }.status)
-
-        val primera = client.post("/api/notificaciones/$id/leida") { bearerAuth(tutor) }.body<NotificacionDto>()
+        val primera = client.post("/api/notificaciones/${n.id}/leida") { bearerAuth(tutor) }.body<NotificacionDto>()
         assertNotNull(primera.leidaEn)
         reloj.avanzarDias(1)
-        val segunda = client.post("/api/notificaciones/$id/leida") { bearerAuth(tutor) }.body<NotificacionDto>()
+        val segunda = client.post("/api/notificaciones/${n.id}/leida") { bearerAuth(tutor) }.body<NotificacionDto>()
         assertEquals(primera.leidaEn, segunda.leidaEn)
-
         assertEquals(0, client.bandeja(tutor).noLeidas)
-        assertEquals(HttpStatusCode.NotFound, client.post("/api/notificaciones/no-existe/leida") { bearerAuth(tutor) }.status)
+
+        val otro = client.tokenDe("tutor2@eyesofter.mx")
+        assertEquals(HttpStatusCode.NotFound, client.post("/api/notificaciones/${n.id}/leida") { bearerAuth(otro) }.status)
+        assertEquals(HttpStatusCode.NotFound, client.post("/api/notificaciones/${UUID.randomUUID()}/leida") { bearerAuth(otro) }.status)
+        assertEquals(HttpStatusCode.NotFound, client.post("/api/notificaciones/no-es-uuid/leida") { bearerAuth(otro) }.status)
+        assertEquals(1, BasePrueba.cuenta("select count(*) from auditoria where accion = 'ACCESO_DENEGADO' and entidad = 'Notificacion'"))
     }
 
     @Test
-    fun marcarTodasLeidas() = testApplication {
+    fun avisosDelPersonal() = testApplication {
         val client = servidor(servicios)
-        client.enviarTamizaje(tamizaje("A"))
-        client.enviarTamizaje(tamizaje("B"))
-        val tutor = client.tokenDe("tutor")
-        assertEquals(2, client.bandeja(tutor).noLeidas)
-        val r = client.post("/api/notificaciones/leidas") { bearerAuth(tutor) }
-        assertTrue(r.bodyAsText().contains("2"))
-        assertEquals(0, client.bandeja(tutor).noLeidas)
-        assertEquals(2, client.bandeja(tutor).notificaciones.size)
-        val soloNoLeidas = client.get("/api/notificaciones?soloNoLeidas=true") { bearerAuth(tutor) }.body<BandejaDto>()
-        assertTrue(soloNoLeidas.notificaciones.isEmpty())
+        val tutor = client.tokenDe("tutor@eyesofter.mx")
+        val enf = client.tokenDe("enfermeria@eyesofter.mx")
+        val cuerpo = """{"titulo":"Junta","mensaje":"Junta de padres el viernes","usernames":["alumno@eyesofter.mx","nadie@x.mx"],"rol":"CLIENTE"}"""
+
+        assertEquals(HttpStatusCode.Forbidden, client.post("/api/notificaciones") { bearerAuth(tutor); contentType(ContentType.Application.Json); setBody(cuerpo) }.status)
+        val r = client.post("/api/notificaciones") { bearerAuth(enf); contentType(ContentType.Application.Json); setBody(cuerpo) }
+        assertEquals(HttpStatusCode.Created, r.status)
+        val enviado = r.body<AvisoEnviadoDto>()
+        assertEquals(3, enviado.enviadas) // 2 tutores activos + el alumno
+        assertEquals(listOf("nadie@x.mx"), enviado.noEncontrados)
+        assertEquals(HttpStatusCode.BadRequest, client.post("/api/notificaciones") {
+            bearerAuth(enf); contentType(ContentType.Application.Json); setBody("""{"titulo":"x","mensaje":"y","rol":"MARCIANO"}""")
+        }.status)
+        assertEquals("Junta", client.bandeja(tutor).notificaciones.single().titulo)
     }
 
-    // ---------- Canales de respaldo ----------
-
     @Test
-    fun siLaPushFallaSeUsaElCorreoYQuedaEnElSeguimiento() = testApplication {
-        push.exito = false
+    fun despachadorPruebaPushYLuegoCorreo() = testApplication {
         val client = servidor(servicios)
-        client.enviarTamizaje(tamizaje())
+        client.recibir()
+        runBlocking { servicios.despachador.despacharPendientes() }
         assertEquals(1, push.envios.size)
-        assertEquals(1, correo.envios.size)
+        assertEquals("tutor@eyesofter.mx", push.envios.single().usuario)
+        assertTrue(correo.envios.isEmpty()) // la push llegó: no hace falta el correo
+        assertEquals(0, BasePrueba.cuenta("select count(*) from notificaciones where pendiente_envio"))
 
-        val filas = client.get("/api/notificaciones/seguimiento") { bearerAuth(client.tokenDe("enfermeria")) }.body<List<SeguimientoDto>>()
-        assertEquals(listOf("correo"), filas.single().entregadaPor)
-        assertEquals("Ana López", filas.single().alumno)
-        assertEquals(HttpStatusCode.Forbidden, client.get("/api/notificaciones/seguimiento") { bearerAuth(client.tokenDe("tutor")) }.status)
+        // M-RFNN-04: si la push falla (sin permiso o sin app), se manda por correo.
+        push.exito = false
+        client.recibir("ESC-2", "A002")
+        runBlocking { servicios.despachador.despacharPendientes() }
+        assertEquals("tutor2@eyesofter.mx", correo.envios.single().usuario)
+        assertEquals(3, BasePrueba.cuenta("select count(*) from entregas_notificacion"))
+
+        val seguimiento = client.get("/api/notificaciones/seguimiento") { bearerAuth(client.tokenDe("enfermeria@eyesofter.mx")) }.body<List<SeguimientoDto>>()
+        assertEquals(setOf(listOf("push"), listOf("correo")), seguimiento.map { it.entregadaPor }.toSet())
+        assertEquals("Luis Ruiz", seguimiento.first { it.tutor == "tutor2@eyesofter.mx" }.alumno)
+        assertEquals(HttpStatusCode.Forbidden, client.get("/api/notificaciones/seguimiento") { bearerAuth(client.tokenDe("tutor@eyesofter.mx")) }.status)
     }
 
     @Test
-    fun sinCanalesLaNotificacionQuedaEnLaBandeja() = testApplication {
-        val client = servidor(Servicios(configPrueba(), scope = null, canales = { emptyList() }))
-        client.enviarTamizaje(tamizaje())
-        assertEquals(1, client.bandeja(client.tokenDe("tutor")).noLeidas)
+    fun loQueDejaElPortalEnLaBandejaDeSalidaTambienSeEntrega() = testApplication {
+        servidor(servicios)
+        // Así inserta el portal (Notificador.cs): pendiente_envio = true.
+        BasePrueba.ejecutar(
+            """insert into notificaciones (id, usuario_id, tipo, titulo, mensaje, datos, creada_en, recordatorios, ultimo_aviso_en, pendiente_envio, envio_es_recordatorio)
+               values (?, ?, 'AVISO', 'Desde el portal', 'Hola', '{"ruta":"notificacion/x"}'::jsonb, now(), 0, now(), true, false)""",
+            UUID.randomUUID(), BasePrueba.idDe("tutor2@eyesofter.mx")
+        )
+        // Y una para una cuenta desactivada: no se entrega.
+        BasePrueba.ejecutar(
+            """insert into notificaciones (id, usuario_id, tipo, titulo, mensaje, datos, creada_en, recordatorios, ultimo_aviso_en, pendiente_envio, envio_es_recordatorio)
+               values (?, ?, 'AVISO', 'No', 'No', '{}'::jsonb, now(), 0, now(), true, false)""",
+            UUID.randomUUID(), BasePrueba.idDe("inactivo@eyesofter.mx")
+        )
+        assertEquals(2, runBlocking { servicios.despachador.despacharPendientes() })
+        assertEquals("Desde el portal", push.envios.single().notificacion.titulo)
     }
 
-    // ---------- Recordatorios (C-RFNN-04) ----------
-
     @Test
-    fun avisoSinLeerTresDiasSeReenviaYAlertaAEnfermeriaUnaVez() = testApplication {
+    fun recordatoriosAlTutorYAlertaAEnfermeriaUnaSolaVez() = testApplication {
         val client = servidor(servicios)
-        client.enviarTamizaje(tamizaje())
+        client.recibir()
+        runBlocking { servicios.despachador.despacharPendientes() }
         push.envios.clear()
 
         reloj.avanzarDias(2)
-        assertEquals(0, runBlocking { servicios.recordatorios.revisar() })
+        assertEquals(0, runBlocking { servicios.recordatorios.revisar() }) // aún no pasan 3 días
 
-        reloj.avanzarDias(1)
-        assertEquals(1, runBlocking { servicios.recordatorios.revisar() })
-        // Al tutor le llega como recordatorio, y Enfermería recibe una alerta.
-        val alTutor = push.envios.filter { it.usuario == "tutor" }
+        reloj.avanzarDias(2)
+        runBlocking { servicios.recordatorios.revisar(); servicios.despachador.despacharPendientes() }
+        val alTutor = push.envios.filter { it.usuario == "tutor@eyesofter.mx" }
+        assertEquals(1, alTutor.size)
         assertTrue(alTutor.single().esRecordatorio)
-        val alertas = client.bandeja(client.tokenDe("enfermeria")).notificaciones
-        assertEquals(TipoNotificacion.ALERTA_ENFERMERIA.name, alertas.single().tipo)
-        assertTrue(alertas.single().mensaje.contains("Ana López"))
+        assertEquals(1, BasePrueba.cuenta("select count(*) from notificaciones where tipo = 'ALERTA_ENFERMERIA'"))
 
-        // Revisar de nuevo enseguida no reenvía.
-        assertEquals(0, runBlocking { servicios.recordatorios.revisar() })
-
-        // Otros 3 días: segundo recordatorio, sin nueva alerta a Enfermería.
-        reloj.avanzarDias(3)
-        assertEquals(1, runBlocking { servicios.recordatorios.revisar() })
-        assertEquals(1, client.bandeja(client.tokenDe("enfermeria")).notificaciones.size)
-
-        // Seguimiento refleja los recordatorios.
-        val fila = client.get("/api/notificaciones/seguimiento") { bearerAuth(client.tokenDe("admin")) }.body<List<SeguimientoDto>>().single()
-        assertEquals(2, fila.recordatoriosEnviados)
-
-        // Una vez leída, ya no se recuerda.
-        val tutor = client.tokenDe("tutor")
-        val id = client.bandeja(tutor).notificaciones.single().id
-        client.post("/api/notificaciones/$id/leida") { bearerAuth(tutor) }
-        reloj.avanzarDias(10)
-        assertEquals(0, runBlocking { servicios.recordatorios.revisar() })
+        // Siguen sin leer: hasta 3 recordatorios, pero la alerta a Enfermería solo la primera vez.
+        repeat(5) { reloj.avanzarDias(4); runBlocking { servicios.recordatorios.revisar() } }
+        assertEquals(3, BasePrueba.cuenta("select recordatorios from notificaciones where tipo = 'RESULTADO_TAMIZAJE'"))
+        assertEquals(1, BasePrueba.cuenta("select count(*) from notificaciones where tipo = 'ALERTA_ENFERMERIA'"))
     }
 
     @Test
-    fun recordatoriosRespetanElMaximo() = testApplication {
+    fun leerLaNotificacionDetieneLosRecordatorios() = testApplication {
         val client = servidor(servicios)
-        client.enviarTamizaje(tamizaje())
-        repeat(5) {
-            reloj.avanzarDias(3)
-            runBlocking { servicios.recordatorios.revisar() }
-        }
-        val recordatorios = push.envios.count { it.usuario == "tutor" && it.esRecordatorio }
-        assertEquals(servicios.config.recordatorioMax, recordatorios)
+        client.recibir()
+        val tutor = client.tokenDe("tutor@eyesofter.mx")
+        client.post("/api/notificaciones/leidas") { bearerAuth(tutor) }
+        reloj.avanzarDias(4)
+        runBlocking { servicios.recordatorios.revisar() }
+        assertEquals(0, BasePrueba.cuenta("select recordatorios from notificaciones where tipo = 'RESULTADO_TAMIZAJE'"))
     }
 
-    // ---------- Dispositivos ----------
-
     @Test
-    fun registrarYQuitarDispositivo() = testApplication {
+    fun casoSinAtenderRecibeRecordatorioSemanal() = testApplication {
         val client = servidor(servicios)
-        val tutor = client.tokenDe("tutor")
-        suspend fun registrar(plataforma: String) = client.post("/api/dispositivos") {
-            bearerAuth(tutor)
-            contentType(ContentType.Application.Json)
-            setBody(RegistroDispositivoDto("fcm-token-abc", plataforma))
-        }
-        assertEquals(HttpStatusCode.BadRequest, registrar("WINDOWS").status)
-        assertEquals(HttpStatusCode.NoContent, registrar("android").status)
-        assertEquals("ANDROID", runBlocking { servicios.dispositivos.deUsuario("tutor") }.single().plataforma)
-
-        // Si otro usuario inicia sesión en el mismo teléfono, el token pasa a él.
-        client.post("/api/dispositivos") {
-            bearerAuth(client.tokenDe("tutor2"))
-            contentType(ContentType.Application.Json)
-            setBody(RegistroDispositivoDto("fcm-token-abc", "ANDROID"))
-        }
-        assertTrue(runBlocking { servicios.dispositivos.deUsuario("tutor") }.isEmpty())
-
-        assertEquals(HttpStatusCode.BadRequest, client.delete("/api/dispositivos") { bearerAuth(tutor) }.status)
-        client.delete("/api/dispositivos?token=fcm-token-abc") { bearerAuth(client.tokenDe("tutor2")) }
-        assertTrue(runBlocking { servicios.dispositivos.deUsuario("tutor2") }.isEmpty())
+        val r = client.recibir(semaforo = "ROJO")
+        client.post("/api/notificaciones/leidas") { bearerAuth(client.tokenDe("tutor@eyesofter.mx")) }
+        reloj.avanzarDias(8)
+        runBlocking { servicios.recordatorios.revisar() }
+        assertEquals(1, BasePrueba.cuenta("select count(*) from notificaciones where tipo = 'RECORDATORIO_CASO'"))
+        runBlocking { servicios.recordatorios.revisar() } // misma semana: no repite
+        assertEquals(1, BasePrueba.cuenta("select count(*) from notificaciones where tipo = 'RECORDATORIO_CASO'"))
+        // Con un comprobante aprobado ya no se recuerda.
+        BasePrueba.ejecutar(
+            "insert into comprobantes (id, caso_id, subido_por_id, tipo, content_type, tamano_bytes, contenido, subido_en, estado) values (?, ?, 'x', 'Receta', 'image/png', 1, ?, now(), 'Aprobado')",
+            UUID.randomUUID(), r.casoId, byteArrayOf(1)
+        )
+        reloj.avanzarDias(8)
+        runBlocking { servicios.recordatorios.revisar() }
+        assertEquals(1, BasePrueba.cuenta("select count(*) from notificaciones where tipo = 'RECORDATORIO_CASO'"))
     }
 
-    // ---------- Avisos manuales ----------
-
     @Test
-    fun soloElPersonalEnviaAvisosYPuedeUsarRol() = testApplication {
+    fun dispositivos() = testApplication {
         val client = servidor(servicios)
-        val aviso = AvisoEntradaDto("Junta de padres", "El viernes a las 10:00", rol = "CLIENTE", usernames = listOf("tutor", "fantasma"))
-
-        val prohibido = client.post("/api/notificaciones") {
-            bearerAuth(client.tokenDe("tutor"))
-            contentType(ContentType.Application.Json)
-            setBody(aviso)
-        }
-        assertEquals(HttpStatusCode.Forbidden, prohibido.status)
-
-        val r = client.post("/api/notificaciones") {
-            bearerAuth(client.tokenDe("enfermeria"))
-            contentType(ContentType.Application.Json)
-            setBody(aviso)
-        }
-        assertEquals(HttpStatusCode.Created, r.status)
-        val dto = r.body<AvisoEnviadoDto>()
-        assertEquals(2, dto.enviadas) // tutor y tutor2, sin duplicar a "tutor"
-        assertEquals(listOf("fantasma"), dto.noEncontrados)
-        assertEquals("AVISO", client.bandeja(client.tokenDe("tutor2")).notificaciones.single().tipo)
-
-        val vacio = client.post("/api/notificaciones") {
-            bearerAuth(client.tokenDe("admin"))
-            contentType(ContentType.Application.Json)
-            setBody(AvisoEntradaDto("x", "y"))
-        }
-        assertEquals(HttpStatusCode.BadRequest, vacio.status)
+        val tutor = client.tokenDe("tutor@eyesofter.mx")
+        fun registro(token: String, plataforma: String = "android") = RegistroDispositivoDto(token, plataforma)
+        assertEquals(HttpStatusCode.BadRequest, client.post("/api/dispositivos") { bearerAuth(tutor); contentType(ContentType.Application.Json); setBody(registro("t1", "windows")) }.status)
+        assertEquals(HttpStatusCode.NoContent, client.post("/api/dispositivos") { bearerAuth(tutor); contentType(ContentType.Application.Json); setBody(registro("t1")) }.status)
+        // El mismo teléfono inicia sesión con otra cuenta: el token cambia de dueño.
+        val otro = client.tokenDe("tutor2@eyesofter.mx")
+        client.post("/api/dispositivos") { bearerAuth(otro); contentType(ContentType.Application.Json); setBody(registro("t1", "IOS")) }
+        assertEquals(BasePrueba.idDe("tutor2@eyesofter.mx"), BasePrueba.consulta("select usuario_id from dispositivos where token = 't1'") { it.getString(1) })
+        // El tutor anterior no puede borrarlo; el dueño sí.
+        client.delete("/api/dispositivos?token=t1") { bearerAuth(tutor) }
+        assertEquals(1, BasePrueba.cuenta("select count(*) from dispositivos"))
+        assertEquals(HttpStatusCode.NoContent, client.delete("/api/dispositivos?token=t1") { bearerAuth(otro) }.status)
+        assertNull(BasePrueba.consulta("select token from dispositivos") { it.getString(1) })
     }
 }

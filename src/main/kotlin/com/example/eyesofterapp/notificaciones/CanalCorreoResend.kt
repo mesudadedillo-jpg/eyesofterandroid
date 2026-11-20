@@ -1,7 +1,6 @@
 package com.example.eyesofterapp.notificaciones
 
-import com.example.eyesofterapp.data.NotificacionRecord
-import com.example.eyesofterapp.data.UserRecord
+import com.example.eyesofterapp.repos.NotificacionRecord
 import io.ktor.client.HttpClient
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.post
@@ -27,8 +26,8 @@ class CanalCorreoResend(
 
     override val nombre = "correo"
 
-    override suspend fun enviar(notificacion: NotificacionRecord, usuario: UserRecord, esRecordatorio: Boolean): ResultadoEnvio {
-        val email = usuario.email?.takeIf { it.isNotBlank() }
+    override suspend fun enviar(notificacion: NotificacionRecord, destinatario: Destinatario, esRecordatorio: Boolean): ResultadoEnvio {
+        val email = destinatario.email?.takeIf { it.isNotBlank() }
             ?: return ResultadoEnvio(false, "el usuario no tiene correo registrado")
 
         val cuerpo = buildJsonObject {
@@ -37,8 +36,8 @@ class CanalCorreoResend(
             put("subject", "EYESOFTER: ${notificacion.tituloVisible(esRecordatorio)}")
             put(
                 "text",
-                "Hola, ${usuario.fullName}:\n\n${notificacion.mensaje}\n\n" +
-                    "Abre la aplicación EYESOFTER Suite para ver el detalle.\n\n" +
+                "Hola, ${destinatario.nombre}:\n\n${notificacion.mensaje}\n\n" +
+                    "Abre la aplicación EYESOFTER Suite o el portal para ver el detalle.\n\n" +
                     "Este es un mensaje automático; no respondas a este correo."
             )
         }

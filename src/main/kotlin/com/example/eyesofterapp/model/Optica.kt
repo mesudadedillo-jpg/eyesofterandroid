@@ -24,7 +24,10 @@ data class Optica(
     val distanciaKm: Double = 0.0,
     val telefono: String = "7751234567",
     /** true = óptica asociada al programa EYESOFTER. */
-    val verificada: Boolean = false
+    val verificada: Boolean = false,
+    /** Optica, Consultorio, Oftalmologia... */
+    val tipo: String = "",
+    val horario: String? = null,
 )
 
 /** Respuesta de GET /salud. */
@@ -38,4 +41,23 @@ data class SaludDto(
     val push: Boolean = false,
     val correo: Boolean = false,
     val escritorio: Boolean = false,
+    /** Notificaciones esperando entrega (bandeja de salida). Si crece, algo falla con push/correo. */
+    val pendientesEnvio: Int = 0,
+)
+
+/** GET /api/clinicas: todo el directorio activo, también las que no tienen coordenadas (M-RFNN-05, M-RFNN-06). */
+@Serializable
+data class ClinicaDto(
+    val id: Int,
+    val nombre: String,
+    val tipo: String,
+    val direccion: String,
+    val ciudad: String,
+    val codigoPostal: String? = null,
+    val telefono: String,
+    val horario: String? = null,
+    val lat: Double? = null,
+    val lng: Double? = null,
+    /** Asociada al programa: con ella hay pase con QR. */
+    val asociada: Boolean,
 )

@@ -1,68 +1,71 @@
 package com.example.eyesofterapp.routes
 
-import com.example.eyesofterapp.data.OpticaRepository
+import com.example.eyesofterapp.Servicios
+import com.example.eyesofterapp.model.ClinicaDto
+import com.example.eyesofterapp.model.Optica
+import com.example.eyesofterapp.repos.Clinica
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 
+private fun Clinica.toOptica(distanciaKm: Double = 0.0) = Optica(
+    id = id, nombre = nombre, direccion = direccion, ciudad = ciudad, codigoPostal = codigoPostal.orEmpty(),
+    lat = latitud ?: 0.0, lng = longitud ?: 0.0, distanciaKm = Math.round(distanciaKm * 100) / 100.0,
+    telefono = telefono, verificada = asociada, tipo = tipo, horario = horario,
+)
+
+private fun Clinica.toDto() = ClinicaDto(id, nombre, tipo, direccion, ciudad, codigoPostal, telefono, horario, latitud, longitud, asociada)
+
 /**
- * GET /opticas/cercanas
+ * Directorio de clínicas (lo mantiene el portal; aquí solo se lee). Público: no tiene datos personales.
  *
- * Dos formas de usarla (ver docs/API.md):
- *  - ?lat=20.0825&lng=-98.3622  → todas las ópticas, de la más cercana a la más lejana,
- *                                 con distanciaKm calculada.
- *  - ?query=Tulancingo          → solo las que contienen el texto en nombre, ciudad,
- *                                 dirección o código postal (distanciaKm = 0.0).
- *  Si vienen las dos, filtra por query y ordena por distancia.
- *
- * Cualquier otro parámetro (la app también manda "ciudad" y "cp") se ignora.
- * Si los parámetros están mal, responde 400 con {"error": "..."} igual que el login.
+ *  GET /opticas/cercanas?lat=&lng=[&query=]  Para el mapa: SOLO las que tienen coordenadas,
+ *                                             asociadas primero y luego por distancia (M-RFN-07).
+ *  GET /opticas/cercanas?query=               Búsqueda por texto (distanciaKm = 0.0).
+ *  GET /api/clinicas[?query=]                 Todo el directorio activo, con o sin coordenadas:
+ *                                             lista sin ubicación (M-RFNN-05) y verificación de una
+ *                                             clínica escrita a mano (M-RFNN-06).
  */
-fun Route.opticasRoutes() {
+fun Route.opticasRoutes(servicios: Servicios) {
     get("/opticas/cercanas") {
         val params = call.request.queryParameters
         val latTexto = params["lat"]
         val lngTexto = params["lng"]
         val query = params["query"]
 
-        suspend fun error400(mensaje: String) =
-            call.respond(HttpStatusCode.BadRequest, mapOf("error" to mensaje))
-
-        // Caso 1: viene al menos una coordenada → se exigen las dos y que sean válidas.
         if (latTexto != null || lngTexto != null) {
             if (latTexto == null || lngTexto == null) {
-                error400("Envía lat y lng juntos, por ejemplo ?lat=20.0825&lng=-98.3622")
+                call.error(HttpStatusCode.BadRequest, "Envía lat y lng juntos, por ejemplo ?lat=20.0825&lng=-98.3622")
                 return@get
             }
-            // toDoubleOrNull devuelve null si el texto no es un número (por ejemplo "abc" o "20,08").
             val lat = latTexto.toDoubleOrNull()
             val lng = lngTexto.toDoubleOrNull()
             if (lat == null || lng == null) {
-                error400("lat y lng deben ser números con punto decimal, por ejemplo lat=20.0825")
+                call.error(HttpStatusCode.BadRequest, "lat y lng deben ser números con punto decimal, por ejemplo lat=20.0825")
                 return@get
             }
-            // La latitud va de -90 a 90 y la longitud de -180 a 180.
-            // (Esto también rechaza "NaN", que toDoubleOrNull sí acepta.)
+            // También rechaza "NaN", que toDoubleOrNull sí acepta.
             if (lat !in -90.0..90.0 || lng !in -180.0..180.0) {
-                error400("Coordenadas fuera de rango: lat debe estar entre -90 y 90, y lng entre -180 y 180")
+                call.error(HttpStatusCode.BadRequest, "Coordenadas fuera de rango: lat debe estar entre -90 y 90, y lng entre -180 y 180")
                 return@get
             }
-            call.respond(OpticaRepository.cercanas(lat, lng, query))
+            call.respond(servicios.clinicas.cercanas(lat, lng, query).map { (c, km) -> c.toOptica(km) })
             return@get
         }
-
-        // Caso 2: solo búsqueda por texto.
         if (query != null) {
             if (query.isBlank()) {
-                error400("El parámetro query no puede estar vacío")
+                call.error(HttpStatusCode.BadRequest, "El parámetro query no puede estar vacío")
                 return@get
             }
-            call.respond(OpticaRepository.buscar(query))
+            call.respond(servicios.clinicas.buscar(query).filter { it.latitud != null && it.longitud != null }.map { it.toOptica() })
             return@get
         }
+        call.error(HttpStatusCode.BadRequest, "Faltan parámetros: envía lat y lng, o query")
+    }
 
-        // Caso 3: no vino nada útil.
-        error400("Faltan parámetros: envía lat y lng, o query")
+    get("/api/clinicas") {
+        val query = call.request.queryParameters["query"]?.take(80)
+        call.respond(servicios.clinicas.buscar(query).map { it.toDto() })
     }
 }

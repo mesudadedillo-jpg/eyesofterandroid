@@ -43,6 +43,8 @@ dependencies {
     implementation(libs.ktor.serverStatusPages) // Errores → {"error": "..."} con el código correcto
     implementation(libs.ktor.serverAuth)        // authenticate { } en las rutas
     implementation(libs.ktor.serverAuthJwt)     // Tokens JWT firmados
+    implementation(libs.ktor.serverRateLimit)   // Límite de intentos por IP
+    implementation(libs.ktor.serverForwardedHeader) // IP real detrás del proxy de Railway
     implementation(libs.kotlinx.serializationJson)
 
     // Para que el servidor llame a Firebase (push) y a Resend (correo).
@@ -50,13 +52,18 @@ dependencies {
     implementation(libs.ktor.clientContentNegotiation)
     implementation(libs.google.authOauth2)
 
+    // Base PostgreSQL compartida con el portal web (eyesofterweb es dueño del esquema).
+    implementation(libs.postgresql)
+    implementation(libs.hikari)
+    implementation(libs.zxing.core)
+
     testImplementation(libs.ktor.serverTestHost)
     testImplementation(libs.ktor.clientMock)
+    testImplementation(libs.embedded.postgres)
     testImplementation(libs.kotlin.testJunit)
 }
 
 tasks.test {
-    // Las pruebas usan sus propios usuarios fijos (src/test/resources/users-test.json)
-    // para no romperse cuando alguien cambia las contraseñas demo de users.json.
-    systemProperty("users.file", "src/test/resources/users-test.json")
+    // Las pruebas levantan su propio PostgreSQL (embedded-postgres) con esquema.sql.
+    maxHeapSize = "1g"
 }

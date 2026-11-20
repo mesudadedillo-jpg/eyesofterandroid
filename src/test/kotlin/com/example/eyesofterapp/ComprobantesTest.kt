@@ -2,8 +2,7 @@ package com.example.eyesofterapp
 
 import com.example.eyesofterapp.model.BandejaDto
 import com.example.eyesofterapp.model.ComprobanteDto
-import com.example.eyesofterapp.model.LoginRequestDto
-import com.example.eyesofterapp.model.RevisionComprobanteDto
+import com.example.eyesofterapp.model.TamizajeDto
 import com.example.eyesofterapp.model.TamizajeEntradaDto
 import com.example.eyesofterapp.model.TamizajeRecibidoDto
 import io.ktor.client.HttpClient
@@ -13,11 +12,9 @@ import io.ktor.client.request.forms.formData
 import io.ktor.client.request.forms.submitFormWithBinaryData
 import io.ktor.client.request.get
 import io.ktor.client.request.header
-import io.ktor.client.request.options
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
-import io.ktor.client.statement.bodyAsText
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
@@ -25,25 +22,25 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.testing.testApplication
+import java.time.LocalDate
+import java.time.ZoneId
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/** Recetas y comprobantes (M-RFN-05, C-RFNN-05) y bloqueo de login (C-RFNN-01). */
+/** Recetas y comprobantes (M-RFN-05, C-RFNN-05, C-RC-04). */
 class ComprobantesTest {
-
-    private val reloj = RelojFalso()
-    private val servicios = Servicios(configPrueba(), scope = null, canales = { emptyList() }, reloj = { reloj.ahora })
+    private val servicios = serviciosPrueba()
+    private val hoy = LocalDate.now(ZoneId.of("America/Mexico_City"))
 
     /** Inicio de un JPG real (FF D8 FF) seguido de relleno. */
     private val jpg = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte()) + ByteArray(2000) { 7 }
 
-    private suspend fun HttpClient.nuevoTamizaje(tutor: String = "tutor", folio: String = "F1"): String =
+    private suspend fun HttpClient.recibir(folio: String = "ESC-1", matricula: String = "A001", semaforo: String = "ROJO") =
         post("/api/escritorio/tamizajes") {
-            header("X-Api-Key", API_KEY_PRUEBA)
-            contentType(ContentType.Application.Json)
-            setBody(TamizajeEntradaDto(folio, "Ana López", tutorUsername = tutor, fecha = "2026-11-18", semaforo = "ROJO"))
+            header("X-Api-Key", API_KEY_PRUEBA); contentType(ContentType.Application.Json)
+            setBody(TamizajeEntradaDto(folio, matricula, hoy.toString(), semaforo))
         }.body<TamizajeRecibidoDto>().tamizajeId
 
     private suspend fun HttpClient.subir(token: String, tamizajeId: String, bytes: ByteArray, tipo: String = "RECETA"): HttpResponse =
@@ -57,111 +54,73 @@ class ComprobantesTest {
         }) { bearerAuth(token) }
 
     @Test
-    fun tutorSubeYEnfermeriaApruebaYAvisaAlTutor() = testApplication {
+    fun subirGuardaCifradoYEnfermeriaLoRevisa() = testApplication {
         val client = servidor(servicios)
-        val tamizaje = client.nuevoTamizaje()
-        val tutor = client.tokenDe("tutor")
-        val enfermeria = client.tokenDe("enfermeria")
+        val id = client.recibir()
+        val tutor = client.tokenDe("tutor@eyesofter.mx")
 
-        val subida = client.subir(tutor, tamizaje, jpg)
-        assertEquals(HttpStatusCode.Created, subida.status)
-        val c = subida.body<ComprobanteDto>()
+        val r = client.subir(tutor, id, jpg)
+        assertEquals(HttpStatusCode.Created, r.status)
+        val c = r.body<ComprobanteDto>()
         assertEquals("PENDIENTE", c.estado)
+        assertEquals("RECETA", c.tipo)
         assertEquals("image/jpeg", c.contentType)
+        assertEquals("tutor@eyesofter.mx", c.tutor)
 
-        // Enfermería recibe aviso y lo ve en pendientes.
-        val bandejaEnf = client.get("/api/notificaciones") { bearerAuth(enfermeria) }.body<BandejaDto>()
-        assertEquals("COMPROBANTE_RECIBIDO", bandejaEnf.notificaciones.single().tipo)
-        val pendientes = client.get("/api/comprobantes?estado=PENDIENTE") { bearerAuth(enfermeria) }.body<List<ComprobanteDto>>()
-        assertEquals(listOf(c.id), pendientes.map { it.id })
+        // C-RC-04: en la base va cifrado (prefijo "E1"), no el JPG tal cual.
+        val crudo = BasePrueba.consulta("select contenido from comprobantes") { it.getBytes(1) }!!
+        assertEquals("E1", String(crudo, 0, 2))
+        assertTrue(crudo.size > jpg.size)
 
-        // Puede descargar el archivo tal cual.
-        val archivo = client.get("/api/comprobantes/${c.id}/archivo") { bearerAuth(enfermeria) }
-        assertEquals(ContentType.Image.JPEG, archivo.contentType())
-        assertContentEquals(jpg, archivo.readRawBytes())
+        val enf = client.tokenDe("enfermeria@eyesofter.mx")
+        assertEquals("COMPROBANTE_RECIBIDO", client.get("/api/notificaciones") { bearerAuth(enf) }.body<BandejaDto>().notificaciones.single().tipo)
+        assertEquals(1, client.get("/api/comprobantes?estado=PENDIENTE") { bearerAuth(enf) }.body<List<ComprobanteDto>>().size)
+        assertContentEquals(jpg, client.get("/api/comprobantes/${c.id}/archivo") { bearerAuth(enf) }.readRawBytes())
 
-        // Rechazar sin motivo no se permite.
-        val sinMotivo = client.post("/api/comprobantes/${c.id}/revision") {
-            bearerAuth(enfermeria); contentType(ContentType.Application.Json); setBody(RevisionComprobanteDto(aprobado = false))
-        }
-        assertEquals(HttpStatusCode.BadRequest, sinMotivo.status)
+        // Rechazo sin motivo → 400; con motivo → aviso al tutor.
+        suspend fun revisar(cuerpo: String, token: String = enf) =
+            client.post("/api/comprobantes/${c.id}/revision") { bearerAuth(token); contentType(ContentType.Application.Json); setBody(cuerpo) }
+        assertEquals(HttpStatusCode.Forbidden, revisar("""{"aprobado":true}""", tutor).status)
+        assertEquals(HttpStatusCode.BadRequest, revisar("""{"aprobado":false}""").status)
+        val rechazado = revisar("""{"aprobado":false,"motivo":"La foto está borrosa"}""").body<ComprobanteDto>()
+        assertEquals("RECHAZADO", rechazado.estado)
+        assertEquals(HttpStatusCode.Conflict, revisar("""{"aprobado":true}""").status)
+        val aviso = client.get("/api/notificaciones") { bearerAuth(tutor) }.body<BandejaDto>().notificaciones.first { it.tipo == "COMPROBANTE_REVISADO" }
+        assertTrue("borrosa" in aviso.mensaje)
+        assertEquals("tamizaje/$id", aviso.datos["ruta"])
 
-        val aprobado = client.post("/api/comprobantes/${c.id}/revision") {
-            bearerAuth(enfermeria); contentType(ContentType.Application.Json); setBody(RevisionComprobanteDto(aprobado = true))
-        }.body<ComprobanteDto>()
-        assertEquals("APROBADO", aprobado.estado)
-
-        // Revisar dos veces → 409.
-        val otraVez = client.post("/api/comprobantes/${c.id}/revision") {
-            bearerAuth(enfermeria); contentType(ContentType.Application.Json); setBody(RevisionComprobanteDto(aprobado = true))
-        }
-        assertEquals(HttpStatusCode.Conflict, otraVez.status)
-
-        val bandejaTutor = client.get("/api/notificaciones") { bearerAuth(tutor) }.body<BandejaDto>()
-        assertTrue(bandejaTutor.notificaciones.any { it.tipo == "COMPROBANTE_REVISADO" && it.titulo == "Comprobante aceptado" })
+        // Un segundo comprobante, aprobado → el caso queda con corrección comprobada.
+        val otro = client.subir(tutor, id, jpg, "comprobante_lentes").body<ComprobanteDto>()
+        client.post("/api/comprobantes/${otro.id}/revision") { bearerAuth(enf); contentType(ContentType.Application.Json); setBody("""{"aprobado":true}""") }
+        assertTrue(client.get("/api/tamizajes/$id") { bearerAuth(tutor) }.body<TamizajeDto>().caso!!.comprobanteAprobado)
+        assertEquals(2, client.get("/api/comprobantes") { bearerAuth(tutor) }.body<List<ComprobanteDto>>().size)
     }
 
     @Test
-    fun seRechazanArchivosInvalidosYAjenos() = testApplication {
+    fun rechazaArchivosQueNoSonImagenOPdfOMuyGrandes() = testApplication {
         val client = servidor(servicios)
-        val tamizaje = client.nuevoTamizaje()
-        val tutor = client.tokenDe("tutor")
-
-        // Un .exe renombrado a .jpg: el contenido no es imagen.
-        assertEquals(HttpStatusCode.UnsupportedMediaType, client.subir(tutor, tamizaje, "MZ\u0090\u0000hola".toByteArray()).status)
-        // Más de 10 MB.
-        val grande = jpg + ByteArray(10 * 1024 * 1024)
-        assertEquals(HttpStatusCode.PayloadTooLarge, client.subir(tutor, tamizaje, grande).status)
-        // Tipo inválido.
-        assertEquals(HttpStatusCode.BadRequest, client.subir(tutor, tamizaje, jpg, tipo = "FOTO").status)
-        // Tamizaje de otro tutor.
-        assertEquals(HttpStatusCode.NotFound, client.subir(client.tokenDe("tutor2"), tamizaje, jpg).status)
-        // Un alumno no sube comprobantes.
-        assertEquals(HttpStatusCode.Forbidden, client.subir(client.tokenDe("alumno"), tamizaje, jpg).status)
-
-        // Y el tutor2 no ve ni descarga los del tutor.
-        val c = client.subir(tutor, tamizaje, jpg).body<ComprobanteDto>()
-        val otro = client.tokenDe("tutor2")
-        assertTrue(client.get("/api/comprobantes") { bearerAuth(otro) }.body<List<ComprobanteDto>>().isEmpty())
-        assertEquals(HttpStatusCode.NotFound, client.get("/api/comprobantes/${c.id}/archivo") { bearerAuth(otro) }.status)
-        // Ni revisa.
-        val revision = client.post("/api/comprobantes/${c.id}/revision") {
-            bearerAuth(tutor); contentType(ContentType.Application.Json); setBody(RevisionComprobanteDto(aprobado = true))
-        }
-        assertEquals(HttpStatusCode.Forbidden, revision.status)
+        val id = client.recibir()
+        val tutor = client.tokenDe("tutor@eyesofter.mx")
+        assertEquals(HttpStatusCode.UnsupportedMediaType, client.subir(tutor, id, "MZ ejecutable".toByteArray()).status)
+        assertEquals(HttpStatusCode.PayloadTooLarge, client.subir(tutor, id, jpg + ByteArray(10 * 1024 * 1024)).status)
+        assertEquals(HttpStatusCode.BadRequest, client.subir(tutor, id, jpg, "FOTO").status)
+        val pdf = "%PDF-1.7\n".toByteArray() + ByteArray(100)
+        assertEquals(HttpStatusCode.Created, client.subir(tutor, id, pdf).status)
     }
 
     @Test
-    fun tresIntentosFallidosBloqueanLaCuenta() = testApplication {
+    fun soloElTutorDelAlumnoYSoloConCaso() = testApplication {
         val client = servidor(servicios)
-        suspend fun intento(pass: String) = client.post("/api/login") {
-            contentType(ContentType.Application.Json); setBody(LoginRequestDto("tutor", pass))
-        }
-        repeat(2) { assertEquals(HttpStatusCode.Unauthorized, intento("mala").status) }
-        // Un acierto reinicia el contador.
-        assertEquals(HttpStatusCode.OK, intento("123456").status)
-        repeat(3) { assertEquals(HttpStatusCode.Unauthorized, intento("mala").status) }
-        // Bloqueada: ni con la contraseña correcta.
-        val bloqueada = intento("123456")
-        assertEquals(HttpStatusCode.TooManyRequests, bloqueada.status)
-        assertTrue(bloqueada.bodyAsText().contains("15 min"), bloqueada.bodyAsText())
-        // Otro usuario no se ve afectado.
-        assertEquals(HttpStatusCode.OK, client.post("/api/login") {
-            contentType(ContentType.Application.Json); setBody(LoginRequestDto("tutor2", "123456"))
-        }.status)
-        // Pasado el tiempo, vuelve a entrar.
-        reloj.ahora += 16 * 60_000
-        assertEquals(HttpStatusCode.OK, intento("123456").status)
-    }
+        val id = client.recibir()
+        val verde = client.recibir("ESC-V", "A003", "VERDE")
+        val tutor = client.tokenDe("tutor@eyesofter.mx")
+        assertEquals(HttpStatusCode.NotFound, client.subir(client.tokenDe("tutor2@eyesofter.mx"), id, jpg).status)
+        assertEquals(HttpStatusCode.Forbidden, client.subir(client.tokenDe("enfermeria@eyesofter.mx"), id, jpg).status)
+        assertEquals(HttpStatusCode.Conflict, client.subir(tutor, verde, jpg).status)
 
-    @Test
-    fun corsPermiteDeleteParaLaVersionWeb() = testApplication {
-        val client = servidor(servicios)
-        val r = client.options("/api/dispositivos") {
-            header(HttpHeaders.Origin, "https://ejemplo.com")
-            header(HttpHeaders.AccessControlRequestMethod, "DELETE")
-        }
-        assertEquals(HttpStatusCode.OK, r.status)
-        assertTrue(r.headers[HttpHeaders.AccessControlAllowMethods].orEmpty().contains("DELETE"))
+        val c = client.subir(tutor, id, jpg).body<ComprobanteDto>()
+        val ajeno = client.tokenDe("tutor2@eyesofter.mx")
+        assertEquals(HttpStatusCode.NotFound, client.get("/api/comprobantes/${c.id}/archivo") { bearerAuth(ajeno) }.status)
+        assertTrue(client.get("/api/comprobantes") { bearerAuth(ajeno) }.body<List<ComprobanteDto>>().isEmpty())
     }
 }

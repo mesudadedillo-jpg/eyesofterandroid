@@ -26,10 +26,10 @@ FROM eclipse-temurin:21-jre
 WORKDIR /app
 COPY --from=build /app/build/libs/eyesofter-backend.jar ./eyesofter-backend.jar
 
-# Aquí se monta el volumen de Railway (Settings → Volumes → /app/data).
-# Sin volumen, la carpeta existe pero se borra en cada despliegue.
-ENV DATA_DIR=/app/data
-RUN mkdir -p /app/data
+# Los datos viven en PostgreSQL (DATABASE_URL): el contenedor no guarda nada.
+# Se ejecuta con un usuario sin privilegios, no como root.
+RUN useradd --system --uid 10001 --no-create-home eyesofter
+USER eyesofter
 
 # Solo es informativo: Railway define PORT y el servidor lo lee.
 EXPOSE 8080
