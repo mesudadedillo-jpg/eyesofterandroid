@@ -1,24 +1,45 @@
-# EYESOFTER Suite — Backend (Ktor)
+# EYESOFTER Suite — Servidor de la app (Ktor)
 
-Servidor de la app móvil de **EYESOFTER Suite**, el proyecto escolar de tamizaje
-visual para la Escuela Primaria-Secundaria METANOIA (Tulancingo, Hgo.).
-Recibe el inicio de sesión, entrega la lista de ópticas cercanas, recibe los
-resultados de tamizaje del sistema de escritorio y avisa a los tutores con
-notificaciones push (y correo de respaldo).
+Servidor de la app móvil y del sistema de escritorio de **EYESOFTER Suite**, el proyecto
+escolar de tamizaje visual para la Escuela Primaria-Secundaria METANOIA (Tulancingo, Hgo.).
 
-- **Repositorio:** `https://github.com/mesudadedillo-jpg/eyesofterandroid`
-- **En producción:** `https://eyesofterandroid-production.up.railway.app` (Railway)
-- **La app que lo usa:** proyecto `eyesofter-app`, repositorio
-  `https://github.com/mesudadedillo-jpg/eyesofterandroidfront`
-- **Contrato entre ambos:** [`docs/API.md`](docs/API.md)
+- Inicio de sesión de la app con **las mismas cuentas del portal web**.
+- Recibe los tamizajes del sistema de escritorio y abre los casos.
+- Expediente para el tutor: resultado, destino, **pase médico con QR**, citas y comprobantes.
+- **Entrega las notificaciones** (push con Firebase y correo con Resend) de todo el sistema,
+  también las que crea el portal.
+- Directorio de clínicas para el mapa.
 
-Hasta noviembre de 2026 el servidor y la app vivían juntos en un solo proyecto
-Gradle. Se separaron para que cada uno se compile, pruebe y despliegue por su
-cuenta. El historial anterior quedó en el respaldo del repositorio original.
+| | |
+|---|---|
+| Repositorio | `https://github.com/mesudadedillo-jpg/eyesofterandroid` |
+| En producción | `https://eyesofterandroid-production.up.railway.app` (Railway) |
+| App móvil | `https://github.com/mesudadedillo-jpg/eyesofterandroidfront` |
+| Portal web (dueño de la base y de las cuentas) | `https://github.com/mesudadedillo-jpg/eyesofterweb` |
+| Contrato de la API | [`docs/API.md`](docs/API.md) |
+
+## Arquitectura
+
+```
+  App móvil ───────┐
+                   ├──► este servidor (Ktor, Railway) ──┐
+  Escritorio ──────┘                                    ├──► PostgreSQL (Railway), UNA sola base
+  Navegador ──────────► portal web (ASP.NET, Railway) ──┘
+```
+
+- El **portal web** crea las tablas (migraciones de EF Core) y administra las cuentas
+  (ASP.NET Identity). **Este servidor no crea tablas ni cuentas**: lee y escribe en las del portal.
+- Contraseñas: se verifican contra el hash PBKDF2-HMAC-SHA512 de Identity (C-RC-05).
+- Bloqueo: 3 fallos → 15 min con las mismas columnas que la web (C-RFNN-01).
+- Datos sensibles cifrados con AES-256-GCM y la **misma llave** que el portal (C-RC-04).
+- Notificaciones: la tabla `notificaciones` es una **bandeja de salida**. El portal y este servidor
+  dejan ahí lo que hay que avisar; el *despachador* de este servidor lo entrega en segundos.
+- `src/main/resources/esquema.sql` es una copia del esquema del portal **solo para las pruebas**.
+  Si el portal agrega una migración, regenérala (ver "Pruebas").
 
 ## Tecnologías
 
-Kotlin 2.4.20 · Ktor 3.6.0 (Netty, JWT, cliente CIO) · kotlinx.serialization · Firebase Cloud Messaging (API HTTP v1) · Resend (correo) · Gradle 9.5.1 · Java 21 · Docker
+Kotlin 2.4.20 · Ktor 3.6.0 (Netty, JWT, límite por IP, cliente CIO) · PostgreSQL (JDBC + HikariCP, sin ORM, consultas parametrizadas) · ZXing (QR) · Firebase Cloud Messaging (API HTTP v1) · Resend (correo) · Gradle 9.5.1 · Java 21 · Docker
 
 ## Estructura de carpetas
 
@@ -33,58 +54,42 @@ eyesofter-backend/
 │   └── wrapper/                Descarga la versión correcta de Gradle (no hay que instalarlo)
 ├── gradlew / gradlew.bat       Ejecutan Gradle (bash / cmd)
 ├── Dockerfile                  Cómo construir la imagen que corre en Railway
+├── railway.json                Configuración de Railway: usar el Dockerfile, healthcheck en /salud, reinicio si falla
 ├── docs/API.md                 Contrato con la app
 └── src/
     ├── main/kotlin/com/example/eyesofterapp/
     │   ├── Application.kt      main(): lee PORT y arranca Netty; module(): junta todo
-    │   ├── Servicios.kt        Arma y conecta repositorios, canales, notificador y recordatorios
-    │   ├── config/
-    │   │   └── Configuracion.kt   Todas las variables de entorno en un solo lugar
+    │   ├── Servicios.kt        Arma y conecta base, repositorios, canales, despachador y recordatorios
+    │   ├── config/Configuracion.kt  Todas las variables de entorno en un solo lugar
+    │   ├── db/BaseDeDatos.kt   Pool de conexiones, transacciones y ayudantes JDBC
+    │   ├── seguridad/
+    │   │   ├── PasswordIdentity.kt  Verifica contraseñas con el formato de ASP.NET Identity
+    │   │   └── CifradoDatos.kt      AES-256-GCM compatible con el portal
     │   ├── plugins/            Funciones de Ktor que se instalan una vez
-    │   │   ├── Serialization.kt   JSON ⇄ clases Kotlin
-    │   │   ├── Cors.kt            Permite llamadas desde la versión web de la app
-    │   │   ├── Security.kt        Crea y verifica el JWT; call.sesion() dice quién llama
-    │   │   └── Errores.kt         Excepciones → {"error": ...} con 400/500
-    │   ├── routes/             Qué hace cada URL
-    │   │   ├── Routing.kt         Índice de rutas (públicas, escritorio y con sesión)
-    │   │   ├── SaludRoutes.kt     GET /salud
-    │   │   ├── AuthRoutes.kt      POST /api/login
-    │   │   ├── OpticasRoutes.kt   GET /opticas/cercanas (con validación)
-    │   │   ├── NotificacionesRoutes.kt  Bandeja, lectura, avisos y seguimiento
-    │   │   ├── DispositivosRoutes.kt    Registro del token de push
-    │   │   ├── TamizajesRoutes.kt       Recepción desde escritorio y consulta del tutor
-    │   │   └── Conversiones.kt          Registros → DTOs, bitácora de auditoría
-    │   ├── notificaciones/     Cómo se le avisa a la gente
-    │   │   ├── CanalNotificacion.kt  Interfaz común (push, correo, y en el futuro SMS/WhatsApp)
-    │   │   ├── CanalPushFcm.kt       Firebase Cloud Messaging
-    │   │   ├── CanalCorreoResend.kt  Correo de respaldo
-    │   │   ├── Notificador.kt        Guarda en la bandeja y prueba los canales en orden
-    │   │   └── Recordatorios.kt      Reenvía avisos sin leer a los 3 días y alerta a Enfermería
-    │   ├── data/               De dónde salen los datos (hoy archivos JSON)
-    │   │   ├── UserRepository.kt  Lee users.json
-    │   │   ├── OpticaRepository.kt Lee opticas.json, filtra y ordena
-    │   │   ├── Distancia.kt       Fórmula de Haversine
-    │   │   ├── AlmacenJson.kt     Lista guardada en un archivo JSON (reemplazo provisional de tabla)
-    │   │   ├── NotificacionRepository.kt  Bandeja de todos los usuarios
-    │   │   ├── DispositivoRepository.kt   Tokens de push por usuario
-    │   │   └── TamizajeRepository.kt      Resultados recibidos del escritorio
+    │   │   ├── Security.kt        JWT; en cada petición revisa en la base que la cuenta siga activa
+    │   │   ├── Proteccion.kt      IP real tras el proxy, 30 intentos/min por IP, cabeceras
+    │   │   ├── Errores.kt         Excepciones → {"error": ...}
+    │   │   ├── Cors.kt, Serialization.kt
+    │   ├── repos/              SQL contra la base compartida
+    │   │   ├── Usuarios.kt        Cuentas de Identity, bloqueo, auditoría, dispositivos
+    │   │   ├── Notificaciones.kt  Bandeja compartida y bandeja de salida
+    │   │   ├── Expedientes.kt     Tamizajes, casos, destino y pase, citas (mismas reglas que el portal)
+    │   │   ├── Comprobantes.kt    Recetas cifradas, consentimientos y reportes
+    │   │   ├── Clinicas.kt        Directorio
+    │   │   └── Enums.kt           Nombres de la base ⇄ nombres de la app
+    │   ├── notificaciones/
+    │   │   ├── Despachador.kt     Entrega la bandeja de salida: push → correo
+    │   │   ├── Recordatorios.kt   Avisos sin leer (3 días) y casos sin atender
+    │   │   ├── CanalPushFcm.kt, CanalCorreoResend.kt, CanalNotificacion.kt
+    │   ├── routes/             Qué hace cada URL (ver docs/API.md)
     │   └── model/              Forma del JSON que viaja (copia del contrato)
-    │       ├── AuthDtos.kt        LoginRequestDto, UserDto, LoginResponseDto
-    │       ├── Optica.kt          Optica y SaludDto
-    │       ├── NotificacionDtos.kt Bandeja, dispositivos, avisos, seguimiento
-    │       └── TamizajeDtos.kt    Entrada del escritorio y lo que ve el tutor
     ├── main/resources/
-    │   ├── users.json          Usuarios demo (contraseñas en texto plano, ver Pendientes). Campo "email" opcional
-    │   ├── opticas.json        Catálogo de 8 ópticas
-    │   └── logback.xml         Formato de los mensajes en consola
-    └── test/
-        ├── kotlin/...          Pruebas: login, ópticas, notificaciones de punta a punta, canales
-        └── resources/users-test.json  Usuarios fijos de las pruebas (no dependen de users.json)
+    │   ├── esquema.sql         Copia del esquema del portal, solo para las pruebas
+    │   └── logback.xml
+    └── test/kotlin/...         Pruebas de punta a punta contra PostgreSQL real
 ```
 
-La idea de la separación por carpetas: **`routes/` no sabe de dónde vienen los
-datos y `data/` no sabe de HTTP**. Así, cuando llegue la base de datos, solo
-cambia `data/`.
+La idea de la separación por carpetas: **`routes/` no escribe SQL y `repos/` no sabe de HTTP**.
 
 ## Cómo ejecutarlo en Windows (Git Bash)
 
@@ -102,36 +107,45 @@ usa para compilar.
 
 ### 2. Pruebas
 
+Las pruebas usan un PostgreSQL de verdad con el esquema del portal y cuentas con
+contraseñas en formato Identity.
+
 ```bash
 ./gradlew test
 ```
 
-Debe terminar en `BUILD SUCCESSFUL`. El reporte detallado queda en
-`build/reports/tests/test/index.html`.
+- Sin configurar nada, levantan un **PostgreSQL embebido** (se descarga solo la primera vez).
+- Si no puede arrancar (por ejemplo, en un contenedor que corre como `root`), usa un PostgreSQL
+  propio. **Su contenido se borra**, así que crea una base solo para esto:
+
+```bash
+createdb eyesofter_pruebas
+PRUEBAS_DATABASE_URL="jdbc:postgresql://localhost:5432/eyesofter_pruebas?user=postgres&password=postgres" ./gradlew test
+```
+
+Si el portal agrega una migración, actualiza la copia del esquema (desde `eyesofterweb/EyesofterWeb`):
+
+```bash
+dotnet ef migrations script --idempotent -o ../../eyesofterandroid/src/main/resources/esquema.sql
+```
 
 ### 3. Correr el servidor
 
+Necesita la base del portal. Lo más fácil: corre primero el portal en tu computadora
+(crea la base y las cuentas demo, contraseña `Eyesofter123!`) y luego:
+
 ```bash
-./gradlew run
+DATABASE_URL="jdbc:postgresql://localhost:5432/eyesofter?user=postgres&password=postgres" ESCRITORIO_API_KEY=k123 URL_PORTAL=http://localhost:5080 ./gradlew run
 ```
 
-Cuando veas `Responding at http://127.0.0.1:8080`, ya escucha (en realidad en
-todas las redes, `0.0.0.0`). Detenlo con `Ctrl+C`. En otra terminal:
+En otra terminal:
 
 ```bash
 curl http://localhost:8080/salud
-curl -X POST http://localhost:8080/api/login -H "Content-Type: application/json" -d '{"username":"admin","password":"123456"}'
+curl -X POST http://localhost:8080/api/login -H "Content-Type: application/json" -d '{"username":"tutor@eyesofter.mx","password":"Eyesofter123!"}'
 curl "http://localhost:8080/opticas/cercanas?lat=20.0825&lng=-98.3622"
-```
-
-Probar el flujo de notificaciones (arranca con `ESCRITORIO_API_KEY=k123 ./gradlew run`):
-
-```bash
-# 1. El escritorio manda un resultado para el tutor "cliente"
-curl -X POST http://localhost:8080/api/escritorio/tamizajes -H "X-Api-Key: k123" -H "Content-Type: application/json" -d '{"folio":"F1","alumnoNombre":"Ana","tutorUsername":"cliente","fecha":"2026-11-18","semaforo":"VERDE"}'
-# 2. El tutor inicia sesión y ve su bandeja (copia el token de la respuesta del login)
-curl -X POST http://localhost:8080/api/login -H "Content-Type: application/json" -d '{"username":"cliente","password":"999"}'
-curl http://localhost:8080/api/notificaciones -H "Authorization: Bearer <token>"
+curl -X POST http://localhost:8080/api/escritorio/tamizajes -H "X-Api-Key: k123" -H "Content-Type: application/json" -d '{"folio":"F1","matricula":"PRI2026003","fecha":"2026-11-19","semaforo":"AMARILLO","agudezaOjoDerecho":"20/40","agudezaOjoIzquierdo":"20/30"}'
+curl http://localhost:8080/api/tamizajes -H "Authorization: Bearer <token del login>"
 ```
 
 ### 4. Construir el JAR (lo mismo que hace Docker)
@@ -145,19 +159,23 @@ java -jar build/libs/eyesofter-backend.jar
 
 | Variable | Para qué | Si no existe |
 |---|---|---|
-| `PORT` | Puerto donde escucha. Railway la asigna sola | `8080` |
-| `USERS_FILE` | Ruta a otro `users.json` | Busca `src/main/resources/users.json`; si no está (Docker), usa la copia dentro del JAR |
-| `JWT_SECRET` | Secreto para firmar las sesiones. **Obligatoria en Railway** (texto largo y aleatorio) | Genera uno temporal: todas las sesiones se pierden al reiniciar |
+| `DATABASE_URL` | La base PostgreSQL **del portal**. En Railway: `${{Postgres.DATABASE_URL}}`. Acepta `postgresql://…` o `jdbc:postgresql://…` | `localhost:5432/eyesofter` (postgres/postgres) |
+| `EYESOFTER_CLAVE_DATOS` | Llave AES-256 en Base64 (32 bytes). **La misma que el portal.** Obligatoria en Railway | Llave de desarrollo (con aviso). **En Railway no arranca** |
+| `JWT_SECRET` | Secreto de las sesiones de la app. **Obligatoria en Railway** | En local genera uno temporal. **En Railway no arranca** |
 | `JWT_DIAS` | Duración de la sesión | `30` |
-| `ESCRITORIO_API_KEY` | Clave que manda el sistema de escritorio en `X-Api-Key` | `POST /api/escritorio/tamizajes` responde 503 |
-| `DATA_DIR` | Carpeta de `notificaciones.json`, `dispositivos.json` y `tamizajes.json` | `data` (en Docker: `/app/data`) |
-| `FIREBASE_SERVICE_ACCOUNT` | **Contenido** del JSON de la cuenta de servicio de Firebase | Sin push (avisa en la consola al arrancar) |
+| `ESCRITORIO_API_KEY` | Clave del sistema de escritorio (`X-Api-Key`) | Las rutas `/api/escritorio/…` responden 503 |
+| `URL_PORTAL` | URL pública del portal: va dentro del QR del pase y en los enlaces de privacidad | `http://localhost:5080` |
+| `VERSION_AVISO_PRIVACIDAD` | Igual que `Eyesofter__VersionAvisoPrivacidad` del portal | `2026-11` |
+| `DIAS_VIGENCIA_PASE` | Igual que `Eyesofter__DiasVigenciaPase` del portal | `60` |
+| `FIREBASE_SERVICE_ACCOUNT` | **Contenido** del JSON de la cuenta de servicio de Firebase | Sin push (aviso al arrancar) |
 | `FIREBASE_SERVICE_ACCOUNT_FILE` | Alternativa: ruta a ese JSON | — |
-| `RESEND_API_KEY` | API key de [Resend](https://resend.com) para el correo de respaldo | Sin correo |
-| `CORREO_REMITENTE` | Remitente, p. ej. `EYESOFTER <avisos@tudominio.com>` (dominio verificado en Resend) | Sin correo |
-| `RECORDATORIO_DIAS` | Días sin leer antes de reenviar y alertar a Enfermería | `3` |
-| `RECORDATORIO_MAX` | Máximo de reenvíos por aviso | `3` |
-| `RECORDATORIO_REVISION_MIN` | Cada cuántos minutos se buscan avisos sin leer | `60` |
+| `RESEND_API_KEY` / `CORREO_REMITENTE` | Correo de respaldo con [Resend](https://resend.com); remitente de un dominio verificado | Sin correo |
+| `DESPACHO_SEGUNDOS` | Cada cuántos segundos se entrega la bandeja de salida | `3` |
+| `RECORDATORIO_DIAS` / `RECORDATORIO_MAX` / `RECORDATORIO_REVISION_MIN` | Avisos sin leer: días, máximo de reenvíos, cada cuántos minutos se revisa | `3` / `3` / `60` |
+| `LOGIN_INTENTOS_MAX` / `LOGIN_BLOQUEO_MIN` | Bloqueo de cuenta (deben coincidir con el portal) | `3` / `15` |
+| `PORT`, `RAILWAY_ENVIRONMENT`, `RAILWAY_GIT_COMMIT_SHA` | Las pone Railway | `8080`, —, `dev` |
+
+Para generar secretos: `openssl rand -base64 32`.
 
 ## Despliegue en Railway
 
@@ -169,22 +187,36 @@ construir. El `Dockerfile` tiene dos etapas:
 2. **ejecución** — con solo un JRE 21 copia ese JAR y lo arranca con
    `java -jar`. La imagen final es más ligera y no lleva el código fuente.
 
-No hay que configurar comando de compilación ni de arranque en Railway.
+No hay que configurar comando de compilación ni de arranque en Railway: `railway.json`
+le dice que use el `Dockerfile`, que revise `GET /salud` antes de dar por bueno un
+despliegue (si el servidor no arranca, Railway mantiene la versión anterior) y que
+lo reinicie si se cae.
 
-### Checklist para el despliegue con notificaciones
+**Railway despliega la rama `main`.** Lo que esté en otras ramas no llega a
+producción hasta que se fusione. Para confirmar qué versión está corriendo:
 
-1. **Variables** en Railway → servicio → *Variables*: `JWT_SECRET`, `ESCRITORIO_API_KEY`,
-   `FIREBASE_SERVICE_ACCOUNT` y, si habrá correo, `RESEND_API_KEY` y `CORREO_REMITENTE`.
-   Para generar secretos: `openssl rand -base64 32`.
-2. **Volumen** (sin esto, cada despliegue borra notificaciones, dispositivos y tamizajes):
-   Railway → servicio → *Settings* → *Volumes* → montar en `/app/data`.
-3. **Firebase** (el mismo proyecto que use la app):
-   consola de Firebase → ⚙ *Configuración del proyecto* → *Cuentas de servicio* →
-   *Generar nueva clave privada*. Pega el contenido completo del JSON en
-   `FIREBASE_SERVICE_ACCOUNT`. Para iOS, sube además la llave APNs en *Cloud Messaging*.
+```bash
+curl https://eyesofterandroid-production.up.railway.app/salud
+```
+
+`version` debe coincidir con los primeros 7 caracteres del último commit de `main`.
+
+### Checklist de despliegue (proyecto de Railway con 3 servicios)
+
+1. **PostgreSQL**: en el proyecto de Railway, *+ New → Database → PostgreSQL*.
+2. **Portal web** (`eyesofterweb`) desplegado primero: crea las tablas y la cuenta de Dirección.
+3. **Este servidor** → *Variables*:
+   - `DATABASE_URL` = `${{Postgres.DATABASE_URL}}` (referencia; usa la red privada de Railway)
+   - `EYESOFTER_CLAVE_DATOS` = **la misma** que el portal
+   - `JWT_SECRET`, `ESCRITORIO_API_KEY` (generadas con `openssl rand -base64 32`)
+   - `URL_PORTAL` = la URL pública del portal
+   - `FIREBASE_SERVICE_ACCOUNT` y, si habrá correo, `RESEND_API_KEY` y `CORREO_REMITENTE`
+4. **Firebase** (el mismo proyecto que la app): consola → ⚙ *Configuración del proyecto* →
+   *Cuentas de servicio* → *Generar nueva clave privada*; pega el JSON completo en
+   `FIREBASE_SERVICE_ACCOUNT`. Para iOS, sube la llave APNs en *Cloud Messaging*.
    **Nunca subas ese JSON al repositorio.**
-4. Al arrancar, la consola de Railway no debe mostrar los avisos
-   `FIREBASE_SERVICE_ACCOUNT no está definida` ni `JWT_SECRET no está definida`.
+5. Revisa `GET /salud`: `db: true` y `push`/`correo`/`escritorio` en `true`.
+6. Ya **no** hace falta el volumen `/app/data`: todo vive en PostgreSQL. Si lo creaste antes, puedes quitarlo.
 
 ## Cómo se conecta con la app
 
@@ -200,32 +232,12 @@ La app (`eyesofter-app`) tiene la URL de este servidor en **un solo lugar**:
 Ya no comparten código: comparten el **contrato** de `docs/API.md`. Si cambias
 un campo en `model/`, cámbialo también en la app y en las dos copias de `API.md`.
 
-## Dónde entrará MySQL (todavía NO está conectado)
-
-1. **Dependencias:** volver a agregar a `gradle/libs.versions.toml` y a
-   `build.gradle.kts` HikariCP (`com.zaxxer:HikariCP:6.2.1`), MySQL Connector/J
-   (`com.mysql:mysql-connector-j:9.2.0`) y bcrypt (`at.favre.lib:bcrypt:0.10.2`),
-   las mismas versiones que tenía el proyecto original.
-2. **Conexión:** un archivo nuevo `plugins/Database.kt` que cree el pool de
-   HikariCP leyendo las variables que Railway da al agregar MySQL
-   (`MYSQLHOST`, `MYSQLPORT`, `MYSQLDATABASE`, `MYSQLUSER`, `MYSQLPASSWORD`).
-   Se llamaría desde `Application.module()`.
-3. **`data/UserRepository.kt`:** cambiar la lectura de `users.json` por una
-   consulta a la tabla de usuarios, comparando la contraseña con bcrypt.
-4. **`data/OpticaRepository.kt`:** cambiar `opticas.json` por una consulta a la
-   tabla de ópticas.
-5. **`routes/SaludRoutes.kt`:** hacer un `SELECT 1` y responder `db: true` si funciona.
-
-Las rutas (`routes/`) y los DTOs (`model/`) no cambian, así que la app no se entera.
-
 ## Pendientes conocidos
 
-- Contraseñas en texto plano en `users.json`, y ese archivo está en el repositorio (C-RC-05 pide bcrypt).
-- Falta la relación tutor ↔ alumno: el escritorio indica el tutor con `tutorUsername`.
-  Cuando haya MySQL debería salir de una tabla de alumnos.
-- `users.json` no tiene correos todavía: sin `email` no hay correo de respaldo.
-- Los datos de notificaciones viven en archivos JSON (`DATA_DIR`), pensados para el piloto;
-  pasarán a MySQL junto con lo demás.
-- No hay bloqueo tras 3 intentos fallidos de login (C-RFNN-01) ni recuperación de contraseña (C-RFNN-02).
-- CORS permite cualquier dominio (`anyHost()`).
-- El `Dockerfile` no se ha probado localmente (falta Docker en la computadora de desarrollo); Railway lo valida al desplegar.
+- **Firebase**: falta crear el proyecto y cargar `FIREBASE_SERVICE_ACCOUNT`; mientras tanto los avisos
+  quedan en la bandeja (la app los muestra al abrirla) y, si hay Resend, llegan por correo.
+- El sistema de escritorio debe adoptar el contrato de `docs/API.md` §13 (matrícula en lugar de
+  `tutorUsername`, cola de reintentos e incidencias).
+- CORS permite cualquier dominio: la API usa tokens Bearer (no cookies), así que una página ajena
+  no puede actuar en nombre de nadie sin su token.
+- `esquema.sql` es una copia manual del esquema del portal (ver "Pruebas").

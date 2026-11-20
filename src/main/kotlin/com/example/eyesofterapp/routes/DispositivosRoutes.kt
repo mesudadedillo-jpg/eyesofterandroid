@@ -30,7 +30,7 @@ fun Route.dispositivosRoutes(servicios: Servicios) {
             call.error(HttpStatusCode.BadRequest, "plataforma debe ser ANDROID o IOS")
             return@post
         }
-        servicios.dispositivos.registrar(entrada.token.trim(), sesion.username, plataforma, servicios.reloj())
+        servicios.dispositivos.registrar(entrada.token.trim(), sesion.id, plataforma, servicios.reloj())
         call.respond(HttpStatusCode.NoContent)
     }
 
@@ -42,7 +42,7 @@ fun Route.dispositivosRoutes(servicios: Servicios) {
             return@delete
         }
         // 204 aunque no existiera: el resultado final es el mismo (ese token ya no recibe avisos).
-        servicios.dispositivos.eliminar(token, sesion.username)
+        servicios.dispositivos.eliminar(token, sesion.id)
         call.respond(HttpStatusCode.NoContent)
     }
 }

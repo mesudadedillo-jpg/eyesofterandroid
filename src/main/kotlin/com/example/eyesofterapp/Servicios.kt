@@ -1,47 +1,57 @@
 package com.example.eyesofterapp
 
 import com.example.eyesofterapp.config.Configuracion
-import com.example.eyesofterapp.data.DispositivoRepository
-import com.example.eyesofterapp.data.NotificacionRepository
-import com.example.eyesofterapp.data.TamizajeRepository
-import com.example.eyesofterapp.data.UserRepository
+import com.example.eyesofterapp.db.BaseDeDatos
 import com.example.eyesofterapp.notificaciones.CanalCorreoResend
 import com.example.eyesofterapp.notificaciones.CanalNotificacion
 import com.example.eyesofterapp.notificaciones.CanalPushFcm
-import com.example.eyesofterapp.notificaciones.Notificador
+import com.example.eyesofterapp.notificaciones.Despachador
 import com.example.eyesofterapp.notificaciones.Recordatorios
 import com.example.eyesofterapp.plugins.Tokens
+import com.example.eyesofterapp.repos.Auditoria
+import com.example.eyesofterapp.repos.ClinicaRepository
+import com.example.eyesofterapp.repos.ComprobanteRepository
+import com.example.eyesofterapp.repos.ConsentimientoRepository
+import com.example.eyesofterapp.repos.DispositivoRepository
+import com.example.eyesofterapp.repos.ExpedienteRepository
+import com.example.eyesofterapp.repos.NotificacionRepository
+import com.example.eyesofterapp.repos.UsuarioRepository
+import com.example.eyesofterapp.seguridad.CifradoDatos
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
-import kotlinx.coroutines.CoroutineScope
 import org.slf4j.LoggerFactory
-import java.io.File
+import java.time.Instant
 
 /**
- * Arma todas las piezas del servidor y las conecta entre sí. Es el único lugar
- * que decide QUÉ implementación se usa (archivo JSON hoy, MySQL mañana; push
- * real o ninguna). Las rutas reciben este objeto y no saben de dónde salen.
+ * Arma todas las piezas del servidor y las conecta entre sí. Es el único lugar que decide
+ * QUÉ implementación se usa (push real o ninguna, qué base). Las rutas reciben este objeto.
  */
 class Servicios(
     val config: Configuracion,
-    /** Dónde corren los envíos en segundo plano. null = en la misma petición (pruebas). */
-    scope: CoroutineScope?,
+    /** La base compartida con el portal. Las pruebas pasan una PostgreSQL embebida. */
+    val db: BaseDeDatos = BaseDeDatos.desdeUrl(config.databaseUrl),
     /** Las pruebas pasan canales falsos para no llamar a Firebase de verdad. */
     canales: ((DispositivoRepository) -> List<CanalNotificacion>)? = null,
-    val reloj: () -> Long = System::currentTimeMillis,
+    val reloj: () -> Instant = Instant::now,
 ) {
     private val log = LoggerFactory.getLogger(Servicios::class.java)
 
+    val cifrado = CifradoDatos(config.claveDatos)
     // Los JWT usan siempre la hora real: el verificador la usa para revisar vencimiento.
     val tokens = Tokens(config)
-    val usuarios = UserRepository
-    val notificaciones = NotificacionRepository(config.dataDir?.let { File(it, "notificaciones.json") })
-    val dispositivos = DispositivoRepository(config.dataDir?.let { File(it, "dispositivos.json") })
-    val tamizajes = TamizajeRepository(config.dataDir?.let { File(it, "tamizajes.json") })
+
+    val usuarios = UsuarioRepository(db)
+    val auditoria = Auditoria(db)
+    val notificaciones = NotificacionRepository(db)
+    val dispositivos = DispositivoRepository(db)
+    val clinicas = ClinicaRepository(db)
+    val expedientes = ExpedienteRepository(db, cifrado, config.diasVigenciaPase)
+    val comprobantes = ComprobanteRepository(db, cifrado)
+    val consentimientos = ConsentimientoRepository(db)
 
     /** Cliente HTTP para hablar con Firebase y Resend. Se crea solo si algún canal lo usa. */
-    private val http: HttpClient by lazy {
+    private val httpCreado = lazy {
         HttpClient(CIO) {
             install(HttpTimeout) {
                 requestTimeoutMillis = 15_000
@@ -49,23 +59,30 @@ class Servicios(
             }
         }
     }
+    private val http: HttpClient by httpCreado
 
-    val notificador = Notificador(
-        repo = notificaciones,
-        buscarUsuario = usuarios::findByUsername,
-        canales = canales?.invoke(dispositivos) ?: canalesReales(),
-        scope = scope,
-        reloj = reloj,
-    )
+    private val listaCanales: List<CanalNotificacion> = canales?.invoke(dispositivos) ?: canalesReales()
+
+    /** Nombres de los canales que sí quedaron configurados ("push", "correo"). Los muestra /salud. */
+    val canalesActivos: List<String> = listaCanales.map { it.nombre }
+
+    val despachador = Despachador(notificaciones, usuarios, listaCanales, reloj)
 
     val recordatorios = Recordatorios(
+        db = db,
         repo = notificaciones,
-        notificador = notificador,
-        usuariosConRol = usuarios::findByRole,
+        expedientes = expedientes,
+        despachador = despachador,
         diasPlazo = config.recordatorioDias,
         maxRecordatorios = config.recordatorioMax,
         reloj = reloj,
     )
+
+    /** Se llama al apagar el servidor. */
+    fun cerrar() {
+        if (httpCreado.isInitialized()) http.close()
+        db.cerrar()
+    }
 
     /** Orden = prioridad: primero push y, si no llega, correo. */
     private fun canalesReales(): List<CanalNotificacion> = buildList {

@@ -1,11 +1,12 @@
 package com.example.eyesofterapp
 
-import com.example.eyesofterapp.data.DispositivoRepository
-import com.example.eyesofterapp.data.NotificacionRecord
-import com.example.eyesofterapp.data.NotificacionRepository
-import com.example.eyesofterapp.data.TipoNotificacion
-import com.example.eyesofterapp.data.UserRecord
 import com.example.eyesofterapp.notificaciones.CanalCorreoResend
+import com.example.eyesofterapp.notificaciones.Destinatario
+import com.example.eyesofterapp.repos.DispositivoRepository
+import com.example.eyesofterapp.repos.NotificacionRecord
+import com.example.eyesofterapp.repos.TipoNotificacion
+import java.time.Instant
+import java.util.UUID
 import com.example.eyesofterapp.notificaciones.CanalPushFcm
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -17,7 +18,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -26,18 +26,22 @@ import kotlin.test.assertTrue
 /** Prueba lo que el servidor le manda a Firebase y a Resend, sin red (MockEngine). */
 class CanalesTest {
 
-    private val tutor = UserRecord("tutor", "x", "Tutor Demo", "CLIENTE", email = "tutor@example.com")
+    init { BasePrueba.reiniciar() }
+    private val idTutor = BasePrueba.idDe("tutor@eyesofter.mx")
+    private val tutor = Destinatario(idTutor, "tutor@example.com", "Tutor Demo")
+    private val idNotificacion = UUID.randomUUID()
     private val notificacion = NotificacionRecord(
-        id = "n1", destinatario = "tutor", tipo = TipoNotificacion.RESULTADO_TAMIZAJE,
+        id = idNotificacion, destinatario = idTutor, tipo = TipoNotificacion.RESULTADO_TAMIZAJE,
         titulo = "Resultado del tamizaje visual", mensaje = "Ya está disponible",
-        datos = mapOf("ruta" to "tamizaje/t1", "tamizajeId" to "t1"), creadaEn = 0,
+        datos = mapOf("ruta" to "tamizaje/1", "tamizajeId" to "1"), creadaEn = Instant.EPOCH, leidaEn = null,
+        recordatorios = 0, ultimoAvisoEn = Instant.EPOCH,
     )
 
     @Test
     fun fcmEnviaElMensajeCorrectoYOlvidaTokensVencidos() = runBlocking {
-        val dispositivos = DispositivoRepository(null)
-        dispositivos.registrar("token-bueno", "tutor", "ANDROID", 0)
-        dispositivos.registrar("token-viejo", "tutor", "IOS", 0)
+        val dispositivos = DispositivoRepository(BasePrueba.db)
+        dispositivos.registrar("token-bueno", idTutor, "ANDROID", Instant.now())
+        dispositivos.registrar("token-viejo", idTutor, "IOS", Instant.now())
 
         val cuerpos = mutableListOf<String>()
         val http = HttpClient(MockEngine { req ->
@@ -57,18 +61,18 @@ class CanalesTest {
         val mensaje = Json.parseToJsonElement(cuerpos.first { "token-bueno" in it }).jsonObject["message"]!!.jsonObject
         assertEquals("Recordatorio: Resultado del tamizaje visual", mensaje["notification"]!!.jsonObject["title"]!!.jsonPrimitive.content)
         val data = mensaje["data"]!!.jsonObject
-        assertEquals("tamizaje/t1", data["ruta"]!!.jsonPrimitive.content)
-        assertEquals("n1", data["notificacionId"]!!.jsonPrimitive.content)
+        assertEquals("tamizaje/1", data["ruta"]!!.jsonPrimitive.content)
+        assertEquals(idNotificacion.toString(), data["notificacionId"]!!.jsonPrimitive.content)
         assertEquals("RESULTADO_TAMIZAJE", data["tipo"]!!.jsonPrimitive.content)
 
         // El token que Firebase rechazó se borró; el bueno sigue.
-        assertEquals(listOf("token-bueno"), dispositivos.deUsuario("tutor").map { it.token })
+        assertEquals(listOf("token-bueno"), dispositivos.deUsuario(idTutor))
     }
 
     @Test
     fun fcmSinDispositivosNoEsExito() = runBlocking {
         val http = HttpClient(MockEngine { error("no debería llamar a Firebase") })
-        val r = CanalPushFcm(DispositivoRepository(null), http, "p") { "t" }.enviar(notificacion, tutor, false)
+        val r = CanalPushFcm(DispositivoRepository(BasePrueba.db), http, "p") { "t" }.enviar(notificacion, tutor, false)
         assertFalse(r.exito)
     }
 
@@ -87,23 +91,5 @@ class CanalesTest {
         assertTrue(canal.enviar(notificacion, tutor, false).exito)
         assertTrue(llamado)
         assertFalse(canal.enviar(notificacion, tutor.copy(email = null), false).exito)
-    }
-
-    @Test
-    fun lasNotificacionesSobrevivenAUnReinicio() = runBlocking {
-        val carpeta = Files.createTempDirectory("eyesofter").toFile()
-        try {
-            val archivo = carpeta.resolve("notificaciones.json")
-            val antes = NotificacionRepository(archivo)
-            val n = antes.crear("Tutor", TipoNotificacion.AVISO, "Hola", "Mensaje", emptyMap(), 1000)
-            antes.marcarLeida(n.id, "tutor", 2000)
-
-            val despues = NotificacionRepository(archivo) // como si el servidor reiniciara
-            val leida = despues.deUsuario("tutor").single()
-            assertEquals(2000L, leida.leidaEn)
-            assertEquals("notificacion/${n.id}", leida.datos["ruta"])
-        } finally {
-            carpeta.deleteRecursively()
-        }
     }
 }

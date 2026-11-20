@@ -1,8 +1,7 @@
 package com.example.eyesofterapp.notificaciones
 
-import com.example.eyesofterapp.data.DispositivoRepository
-import com.example.eyesofterapp.data.NotificacionRecord
-import com.example.eyesofterapp.data.UserRecord
+import com.example.eyesofterapp.repos.DispositivoRepository
+import com.example.eyesofterapp.repos.NotificacionRecord
 import com.google.auth.oauth2.GoogleCredentials
 import com.google.auth.oauth2.ServiceAccountCredentials
 import io.ktor.client.HttpClient
@@ -42,8 +41,8 @@ class CanalPushFcm(
 
     override val nombre = "push"
 
-    override suspend fun enviar(notificacion: NotificacionRecord, usuario: UserRecord, esRecordatorio: Boolean): ResultadoEnvio {
-        val destinos = dispositivos.deUsuario(usuario.username)
+    override suspend fun enviar(notificacion: NotificacionRecord, destinatario: Destinatario, esRecordatorio: Boolean): ResultadoEnvio {
+        val destinos = dispositivos.deUsuario(destinatario.id)
         if (destinos.isEmpty()) return ResultadoEnvio(false, "sin dispositivos registrados")
 
         val acceso = tokenAcceso()
@@ -53,7 +52,7 @@ class CanalPushFcm(
             val respuesta = http.post("https://fcm.googleapis.com/v1/projects/$proyectoId/messages:send") {
                 bearerAuth(acceso)
                 contentType(ContentType.Application.Json)
-                setBody(mensaje(d.token, notificacion, esRecordatorio).toString())
+                setBody(mensaje(d, notificacion, esRecordatorio).toString())
             }
             if (respuesta.status.isSuccess()) {
                 enviados++
@@ -62,10 +61,10 @@ class CanalPushFcm(
             val cuerpo = respuesta.bodyAsText()
             // El token ya no sirve (app desinstalada o datos borrados): se olvida.
             if (respuesta.status == HttpStatusCode.NotFound || "UNREGISTERED" in cuerpo) {
-                dispositivos.eliminarToken(d.token)
+                dispositivos.eliminarToken(d)
                 errores += "token vencido eliminado"
             } else {
-                log.warn("FCM respondió ${respuesta.status} para ${usuario.username}: $cuerpo")
+                log.warn("FCM respondió ${respuesta.status} para ${destinatario.id}: $cuerpo")
                 errores += "FCM ${respuesta.status.value}"
             }
         }
@@ -85,8 +84,8 @@ class CanalPushFcm(
             }
             // "data" llega a la app aunque esté cerrada; con esto abre la pantalla correcta (M-RC-02).
             putJsonObject("data") {
-                put("notificacionId", n.id)
-                put("tipo", n.tipo.name)
+                put("notificacionId", n.id.toString())
+                put("tipo", n.tipo)
                 n.datos.forEach { (k, v) -> put(k, v) }
             }
             putJsonObject("android") {

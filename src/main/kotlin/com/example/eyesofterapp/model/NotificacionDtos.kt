@@ -11,7 +11,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class NotificacionDto(
     val id: String,
-    /** RESULTADO_TAMIZAJE, ALERTA_ENFERMERIA o AVISO. */
+    /** RESULTADO_TAMIZAJE, ALERTA_ENFERMERIA, AVISO, COMPROBANTE_RECIBIDO, COMPROBANTE_REVISADO, CITA, CASO_ACTUALIZADO o RECORDATORIO_CASO. */
     val tipo: String,
     val titulo: String,
     val mensaje: String,
@@ -43,7 +43,7 @@ data class RegistroDispositivoDto(
 data class AvisoEntradaDto(
     val titulo: String,
     val mensaje: String,
-    /** A quién va. Se puede usar esta lista, el rol, o ambos. */
+    /** Correos de las cuentas a las que va. Se puede usar esta lista, el rol, o ambos. */
     val usernames: List<String> = emptyList(),
     /** Enviar a todos los usuarios de un rol, p. ej. "CLIENTE" = todos los tutores. */
     val rol: String? = null,

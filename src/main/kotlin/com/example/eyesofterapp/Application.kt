@@ -3,10 +3,12 @@ package com.example.eyesofterapp
 import com.example.eyesofterapp.config.Configuracion
 import com.example.eyesofterapp.plugins.configureCors
 import com.example.eyesofterapp.plugins.configureErrores
+import com.example.eyesofterapp.plugins.configureProteccion
 import com.example.eyesofterapp.plugins.configureSecurity
 import com.example.eyesofterapp.plugins.configureSerialization
 import com.example.eyesofterapp.routes.configureRouting
 import io.ktor.server.application.Application
+import io.ktor.server.application.ApplicationStopped
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 
@@ -26,13 +28,15 @@ fun main() {
         .start(wait = true)
 }
 
-/** Configuración real: lee las variables de entorno y arranca los recordatorios. */
+/** Configuración real: lee las variables de entorno y arranca el despachador y los recordatorios. */
 fun Application.module() {
     val config = Configuracion.desdeEntorno()
-    // Application es un CoroutineScope: lo que se lance aquí se cancela al apagar el servidor.
-    val servicios = Servicios(config, scope = this)
+    val servicios = Servicios(config)
     modulo(servicios)
+    // Application es un CoroutineScope: lo que se lance aquí se cancela al apagar el servidor.
+    config.despachoSegundos?.let { servicios.despachador.iniciar(this, it) }
     config.recordatorioRevisionMin?.let { servicios.recordatorios.iniciar(this, it) }
+    monitor.subscribe(ApplicationStopped) { servicios.cerrar() }
 }
 
 /**
@@ -43,6 +47,7 @@ fun Application.modulo(servicios: Servicios) {
     configureSerialization()
     configureErrores()
     configureCors()
-    configureSecurity(servicios.tokens)
+    configureProteccion()
+    configureSecurity(servicios.tokens, servicios.usuarios)
     configureRouting(servicios)
 }

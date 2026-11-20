@@ -1,12 +1,13 @@
 package com.example.eyesofterapp.routes
 
 import com.example.eyesofterapp.Servicios
-import com.example.eyesofterapp.data.TipoNotificacion
 import com.example.eyesofterapp.model.AvisoEntradaDto
 import com.example.eyesofterapp.model.AvisoEnviadoDto
 import com.example.eyesofterapp.model.BandejaDto
 import com.example.eyesofterapp.model.SeguimientoDto
 import com.example.eyesofterapp.plugins.sesion
+import com.example.eyesofterapp.repos.RolesIdentity
+import com.example.eyesofterapp.repos.TipoNotificacion
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -14,10 +15,11 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
+import java.util.UUID
 
 /**
- * Bandeja de notificaciones. Todas requieren sesión; cada usuario solo ve y
- * marca las suyas (C-RC-06).
+ * Bandeja de notificaciones (la MISMA que ve el portal). Todas requieren sesión; cada usuario
+ * solo ve y marca las suyas (C-RC-06).
  *
  *  GET  /api/notificaciones                 Bandeja + número de no leídas (?soloNoLeidas=true)
  *  POST /api/notificaciones/{id}/leida      Confirmación de lectura (C-RFN-07)
@@ -33,19 +35,19 @@ fun Route.notificacionesRoutes(servicios: Servicios) {
         get {
             val sesion = call.sesion()
             val soloNoLeidas = call.request.queryParameters["soloNoLeidas"].toBoolean()
-            val todas = repo.deUsuario(sesion.username)
+            val todas = repo.deUsuario(sesion.id)
             val mostradas = if (soloNoLeidas) todas.filter { it.leidaEn == null } else todas
-            call.respond(BandejaDto(noLeidas = todas.count { it.leidaEn == null }, notificaciones = mostradas.map { it.toDto() }))
+            call.respond(BandejaDto(noLeidas = repo.noLeidas(sesion.id), notificaciones = mostradas.map { it.toDto() }))
         }
 
         post("/{id}/leida") {
             val sesion = call.sesion()
-            val id = call.parameters["id"]!!
-            val marcada = repo.marcarLeida(id, sesion.username, servicios.reloj())
+            val id = runCatching { UUID.fromString(call.parameters["id"]) }.getOrNull()
+            val marcada = id?.let { repo.marcarLeida(it, sesion.id, servicios.reloj()) }
             if (marcada == null) {
                 // 404 tanto si no existe como si es de otro: no se revela que existe.
-                if (repo.buscar(id) != null) auditoria.warn("${sesion.username} intentó marcar la notificación ajena $id")
-                call.error(HttpStatusCode.NotFound, "Notificación no encontrada")
+                if (id != null && repo.buscar(id) != null) call.denegar(servicios, sesion, "Notificacion", id, "Notificación no encontrada")
+                else call.error(HttpStatusCode.NotFound, "Notificación no encontrada")
                 return@post
             }
             call.respond(marcada.toDto())
@@ -53,62 +55,63 @@ fun Route.notificacionesRoutes(servicios: Servicios) {
 
         post("/leidas") {
             val sesion = call.sesion()
-            val cambiadas = repo.marcarTodasLeidas(sesion.username, servicios.reloj())
-            call.respond(mapOf("marcadas" to cambiadas))
+            call.respond(mapOf("marcadas" to repo.marcarTodasLeidas(sesion.id, servicios.reloj())))
         }
 
         post {
             val sesion = call.sesion()
             if (!sesion.esPersonalEscolar) {
-                auditoria.warn("${sesion.username} (${sesion.rol}) intentó enviar un aviso")
+                servicios.auditoria.registrar(sesion.email, "ACCESO_DENEGADO", "Aviso", detalle = "Enviar aviso con rol ${sesion.rol}", ip = call.ip(), exito = false)
                 call.error(HttpStatusCode.Forbidden, "Solo Dirección o Enfermería pueden enviar avisos")
                 return@post
             }
             val entrada = call.receive<AvisoEntradaDto>()
-            if (entrada.titulo.isBlank() || entrada.mensaje.isBlank()) {
-                call.error(HttpStatusCode.BadRequest, "titulo y mensaje son obligatorios")
+            val titulo = entrada.titulo.trim()
+            val mensaje = entrada.mensaje.trim()
+            if (titulo.isBlank() || mensaje.isBlank() || titulo.length > 120 || mensaje.length > 600) {
+                call.error(HttpStatusCode.BadRequest, "titulo (hasta 120) y mensaje (hasta 600) son obligatorios")
                 return@post
             }
             if (entrada.usernames.isEmpty() && entrada.rol.isNullOrBlank()) {
                 call.error(HttpStatusCode.BadRequest, "Indica usernames, rol o ambos")
                 return@post
             }
-            val porNombre = entrada.usernames.associateWith { servicios.usuarios.findByUsername(it) }
-            val porRol = entrada.rol?.takeIf { it.isNotBlank() }?.let { servicios.usuarios.findByRole(it) }.orEmpty()
-            val destinatarios = (porNombre.values.filterNotNull() + porRol).map { it.username.lowercase() }.distinct()
-
-            destinatarios.forEach {
-                servicios.notificador.notificar(it, TipoNotificacion.AVISO, entrada.titulo.trim(), entrada.mensaje.trim())
+            val rol = entrada.rol?.takeIf { it.isNotBlank() }?.let { r ->
+                RolesIdentity.desdeApp(r) ?: run {
+                    call.error(HttpStatusCode.BadRequest, "Rol desconocido: $r")
+                    return@post
+                }
             }
+            val porCorreo = entrada.usernames.distinct().associateWith { servicios.usuarios.credenciales(it)?.usuario?.takeIf { u -> u.activo } }
+            val porRol = rol?.let { servicios.usuarios.conRol(it) }.orEmpty()
+            val destinatarios = (porCorreo.values.filterNotNull() + porRol).map { it.id }.distinct()
+
+            val ahora = servicios.reloj()
+            destinatarios.forEach { repo.crear(it, TipoNotificacion.AVISO, titulo, mensaje, emptyMap(), ahora) }
+            servicios.auditoria.registrar(sesion.email, "ENVIAR_AVISO", "Notificacion", detalle = "$titulo → ${destinatarios.size} cuentas", ip = call.ip())
+            servicios.despachador.despertar()
             call.respond(
                 HttpStatusCode.Created,
-                AvisoEnviadoDto(enviadas = destinatarios.size, noEncontrados = porNombre.filterValues { it == null }.keys.toList())
+                AvisoEnviadoDto(enviadas = destinatarios.size, noEncontrados = porCorreo.filterValues { it == null }.keys.toList())
             )
         }
 
         get("/seguimiento") {
             val sesion = call.sesion()
             if (!sesion.esPersonalEscolar) {
-                auditoria.warn("${sesion.username} (${sesion.rol}) intentó ver el seguimiento de notificaciones")
+                servicios.auditoria.registrar(sesion.email, "ACCESO_DENEGADO", "Seguimiento", detalle = "Rol ${sesion.rol}", ip = call.ip(), exito = false)
                 call.error(HttpStatusCode.Forbidden, "Solo Dirección o Enfermería pueden ver el seguimiento")
                 return@get
             }
             val soloNoLeidas = call.request.queryParameters["soloNoLeidas"].toBoolean()
-            val filas = repo.deTipo(TipoNotificacion.RESULTADO_TAMIZAJE)
-                .filter { !soloNoLeidas || it.leidaEn == null }
-                .map { n ->
-                    SeguimientoDto(
-                        notificacionId = n.id,
-                        tutor = n.destinatario,
-                        alumno = n.datos["alumno"].orEmpty(),
-                        tamizajeId = n.datos["tamizajeId"].orEmpty(),
-                        creadaEn = n.creadaEn.iso(),
-                        leidaEn = n.leidaEn?.iso(),
-                        recordatoriosEnviados = n.recordatorios,
-                        entregadaPor = n.entregas.filter { it.exito }.map { it.canal }.distinct(),
-                    )
-                }
-            call.respond(filas)
+            call.respond(repo.seguimiento(soloNoLeidas).map { f ->
+                val n = f.notificacion
+                SeguimientoDto(
+                    notificacionId = n.id.toString(), tutor = f.tutor, alumno = n.datos["alumno"].orEmpty(),
+                    tamizajeId = n.datos["tamizajeId"].orEmpty(), creadaEn = n.creadaEn.iso(), leidaEn = n.leidaEn?.iso(),
+                    recordatoriosEnviados = n.recordatorios, entregadaPor = f.entregadaPor,
+                )
+            })
         }
     }
 }

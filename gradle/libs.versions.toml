@@ -2,8 +2,6 @@
 # Solo contiene lo que el servidor usa HOY. Las versiones son las mismas
 # que tenía el proyecto original para no cambiar el comportamiento.
 # Firebase se usa por su API HTTP v1 (no el SDK completo de firebase-admin).
-# HikariCP, MySQL Connector/J y bcrypt se quitaron porque no se usaban;
-# se volverán a agregar cuando se conecte la base de datos (ver README).
 
 [versions]
 kotlin = "2.4.20"
@@ -11,6 +9,10 @@ ktor = "3.6.0"
 kotlinx-serialization = "1.8.1"
 logback = "1.6.5"
 google-auth = "1.58.0"
+postgresql = "42.7.14"
+hikari = "7.1.0"
+zxing = "3.5.4"
+embedded-postgres = "2.2.2"
 
 [libraries]
 # --- Servidor Ktor ---
@@ -21,6 +23,9 @@ ktor-serverCors = { module = "io.ktor:ktor-server-cors-jvm", version.ref = "ktor
 ktor-serverStatusPages = { module = "io.ktor:ktor-server-status-pages-jvm", version.ref = "ktor" }
 ktor-serverAuth = { module = "io.ktor:ktor-server-auth-jvm", version.ref = "ktor" }
 ktor-serverAuthJwt = { module = "io.ktor:ktor-server-auth-jwt-jvm", version.ref = "ktor" }
+# Límite de peticiones por IP (login y reportes) y IP real detrás del proxy de Railway.
+ktor-serverRateLimit = { module = "io.ktor:ktor-server-rate-limit-jvm", version.ref = "ktor" }
+ktor-serverForwardedHeader = { module = "io.ktor:ktor-server-forwarded-header-jvm", version.ref = "ktor" }
 ktor-serializationKotlinxJson = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
 kotlinx-serializationJson = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 logback = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
@@ -31,7 +36,15 @@ ktor-clientContentNegotiation = { module = "io.ktor:ktor-client-content-negotiat
 # Obtiene el token OAuth de Google a partir de la cuenta de servicio de Firebase.
 google-authOauth2 = { module = "com.google.auth:google-auth-library-oauth2-http", version.ref = "google-auth" }
 
+# --- Base de datos PostgreSQL compartida con el portal web ---
+postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
+hikari = { module = "com.zaxxer:HikariCP", version.ref = "hikari" }
+# Código QR del pase médico (PNG para la app)
+zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
+
 # --- Pruebas ---
+# PostgreSQL de verdad dentro de las pruebas (descarga los binarios desde Maven Central)
+embedded-postgres = { module = "io.zonky.test:embedded-postgres", version.ref = "embedded-postgres" }
 ktor-serverTestHost = { module = "io.ktor:ktor-server-test-host-jvm", version.ref = "ktor" }
 ktor-clientMock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
 kotlin-testJunit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
