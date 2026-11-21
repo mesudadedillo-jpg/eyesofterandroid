@@ -162,6 +162,8 @@ java -jar build/libs/eyesofter-backend.jar
 | `DATABASE_URL` | La base PostgreSQL **del portal**. En Railway: `${{Postgres.DATABASE_URL}}`. Acepta `postgresql://…` o `jdbc:postgresql://…` | `localhost:5432/eyesofter` (postgres/postgres) |
 | `EYESOFTER_CLAVE_DATOS` | Llave AES-256 en Base64 (32 bytes). **La misma que el portal.** Obligatoria en Railway | Llave de desarrollo (con aviso). **En Railway no arranca** |
 | `JWT_SECRET` | Secreto de las sesiones de la app. **Obligatoria en Railway** | En local genera uno temporal. **En Railway no arranca** |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Cuenta de administrador que se crea al arrancar si no existe. Sin el portal web es la única forma de tener la primera cuenta | No se crea ninguna (aviso en el log si la base no tiene cuentas) |
+| `CREAR_ESQUEMA` | `false` para NO crear las tablas del portal al arrancar. Por defecto se corre `esquema.sql`, que es idempotente y deja anotada la migración en `__EFMigrationsHistory`, así que el portal no choca después | Se crean si faltan |
 | `JWT_DIAS` | Duración de la sesión | `30` |
 | `ESCRITORIO_API_KEY` | Clave del sistema de escritorio (`X-Api-Key`) | Las rutas `/api/escritorio/…` responden 503 |
 | `URL_PORTAL` | URL pública del portal: va dentro del QR del pase y en los enlaces de privacidad | `http://localhost:5080` |
