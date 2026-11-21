@@ -48,6 +48,8 @@ data class Usuario(
     val administradorGlobal: Boolean = false,
     /** Escuelas del personal escolar (tabla usuario_planteles del portal). */
     val planteles: List<Int> = emptyList(),
+    /** Tiene activa la verificación en dos pasos (se configura en el portal). */
+    val dosPasos: Boolean = false,
 ) {
     val esPersonal: Boolean get() = rol == RolesIdentity.DIRECCION || rol == RolesIdentity.ENFERMERIA
 
@@ -80,7 +82,7 @@ class UsuarioRepository(private val db: BaseDeDatos) {
 
     private val select = """
         select u.id, u.email, u.nombre_completo, u.tutor_id, u.alumno_id, u.clinica_id, u.activo, u.security_stamp,
-               u.password_hash, u.lockout_end, u.lockout_enabled, u.administrador_global,
+               u.password_hash, u.lockout_end, u.lockout_enabled, u.administrador_global, u.two_factor_enabled,
                array(select up.plantel_id from usuario_planteles up where up.usuario_id = u.id order by up.plantel_id) as planteles,
                (select r.name from asp_net_user_roles ur join asp_net_roles r on r.id = ur.role_id where ur.user_id = u.id order by r.name limit 1) as rol
         from asp_net_users u
@@ -90,7 +92,7 @@ class UsuarioRepository(private val db: BaseDeDatos) {
         id = rs.getString("id"), email = rs.getString("email") ?: "", nombre = rs.getString("nombre_completo"),
         rol = rs.getString("rol") ?: "", tutorId = rs.entero("tutor_id"), alumnoId = rs.entero("alumno_id"),
         clinicaId = rs.entero("clinica_id"), activo = rs.getBoolean("activo"), sello = rs.getString("security_stamp"),
-        administradorGlobal = rs.getBoolean("administrador_global"),
+        administradorGlobal = rs.getBoolean("administrador_global"), dosPasos = rs.getBoolean("two_factor_enabled"),
         planteles = (rs.getArray("planteles")?.array as? Array<*>)?.map { (it as Number).toInt() }.orEmpty(),
     )
 
@@ -103,6 +105,11 @@ class UsuarioRepository(private val db: BaseDeDatos) {
     }
 
     suspend fun porId(id: String): Usuario? = db.leer { c -> c.uno("$select where u.id = ?", id, fila = ::usuario) }
+
+    /** Clave de la app autenticadora que guardó Identity al activar la verificación en dos pasos. */
+    suspend fun claveAutenticador(id: String): String? = db.leer { c ->
+        c.uno("select value from asp_net_user_tokens where user_id = ? and login_provider = '[AspNetUserStore]' and name = 'AuthenticatorKey'", id) { it.getString(1) }
+    }
 
     suspend fun estaActivo(id: String): Boolean = db.leer { c -> c.uno("select activo from asp_net_users where id = ?", id) { it.getBoolean(1) } ?: false }
 

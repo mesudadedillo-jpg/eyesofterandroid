@@ -78,7 +78,7 @@ fun Route.vinculacionFormularioRoutes(servicios: Servicios) {
             call.pagina(formularioAcceso(s, "Confirma que el código coincide con el que ves en la pantalla del escritorio.", correo), HttpStatusCode.BadRequest)
             return@post
         }
-        val u = when (val r = autenticar(servicios, correo, p["password"].orEmpty(), call.ip())) {
+        val u = when (val r = autenticar(servicios, correo, p["password"].orEmpty(), call.ip(), p["codigo2fa"])) {
             is Autenticacion.Fallida -> {
                 call.pagina(formularioAcceso(s, r.mensaje, correo), r.codigo)
                 return@post
@@ -148,6 +148,8 @@ private fun formularioAcceso(s: Vinculaciones.Solicitud, error: String?, correo:
       <input id="correo" name="correo" type="email" autocomplete="username" value="${esc(correo)}" required>
       <label for="password">Contraseña</label>
       <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <label for="codigo2fa">Código de tu app autenticadora (verificación en dos pasos)</label>
+      <input id="codigo2fa" name="codigo2fa" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="123456">
       <label class="check"><input type="checkbox" name="confirmo" value="si" required> El código coincide con el de la pantalla del escritorio</label>
       <button type="submit">Iniciar sesión y autorizar</button>
     </form>

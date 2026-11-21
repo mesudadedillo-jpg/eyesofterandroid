@@ -175,7 +175,9 @@ java -jar build/libs/eyesofter-backend.jar
 | `JWT_SECRET` | Secreto de las sesiones de la app. **Obligatoria en Railway** | En local genera uno temporal. **En Railway no arranca** |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Cuenta de administrador que se crea al arrancar si no existe. Sin el portal web es la única forma de tener la primera cuenta | No se crea ninguna (aviso en el log si la base no tiene cuentas) |
 | `CREAR_ESQUEMA` | `false` para NO crear las tablas del portal al arrancar. Por defecto se corre `esquema.sql`, que es idempotente y deja anotada la migración en `__EFMigrationsHistory`, así que el portal no choca después | Se crean si faltan |
-| `JWT_DIAS` | Duración de la sesión | `30` |
+| `JWT_DIAS` | Duración de la sesión de tutores y alumnos | `30` |
+| `JWT_HORAS_PERSONAL` | Duración de la sesión de Dirección y Enfermería en la app | `12` |
+| `EXIGIR_2FA_PERSONAL` | `false` para que la verificación en dos pasos del personal sea opcional (no recomendado) | Obligatoria |
 | `ESCRITORIO_DIAS` | Días que dura la vinculación de un equipo de escritorio. **Ya no hay `ESCRITORIO_API_KEY`**: cada equipo se vincula en el navegador con una cuenta de Dirección o Enfermería (ver docs/API.md §13). Si quedó definida en Railway, bórrala | `180` |
 | `URL_PORTAL` | URL pública del portal: va dentro del QR del pase y en los enlaces de privacidad | `http://localhost:5080` |
 | `VERSION_AVISO_PRIVACIDAD` | Igual que `Eyesofter__VersionAvisoPrivacidad` del portal | `2026-11` |

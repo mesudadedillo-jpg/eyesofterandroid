@@ -20,8 +20,15 @@ data class Configuracion(
     val claveDatos: String,
     /** Secreto con el que se firman los JWT. En producción DEBE venir de JWT_SECRET. */
     val jwtSecret: String,
-    /** Cuántos días dura una sesión de la app. */
+    /** Cuántos días dura una sesión de la app (tutores y alumnos). */
     val jwtDias: Long = 30,
+    /** Horas que dura la sesión del personal escolar en la app: ve datos de muchos menores. */
+    val jwtHorasPersonal: Long = 12,
+    /**
+     * Dirección y Enfermería deben tener la verificación en dos pasos activa (se activa en el
+     * portal) para entrar a la app o vincular un equipo. En las pruebas se apaga por defecto.
+     */
+    val exigir2faPersonal: Boolean = false,
     /**
      * Cuántos días dura la vinculación de un equipo de escritorio. Ya no hay una clave
      * compartida: cada equipo se vincula con una cuenta de Dirección o Enfermería.
@@ -84,6 +91,8 @@ data class Configuracion(
                 claveDatos = clave,
                 jwtSecret = secreto,
                 jwtDias = texto("JWT_DIAS")?.toLongOrNull() ?: 30,
+                jwtHorasPersonal = texto("JWT_HORAS_PERSONAL")?.toLongOrNull() ?: 12,
+                exigir2faPersonal = texto("EXIGIR_2FA_PERSONAL")?.lowercase() != "false",
                 escritorioDias = texto("ESCRITORIO_DIAS")?.toLongOrNull() ?: 180,
                 firebaseServiceAccountJson = firebase,
                 resendApiKey = texto("RESEND_API_KEY"),

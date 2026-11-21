@@ -74,7 +74,8 @@ class Tokens(private val config: Configuracion, private val reloj: () -> Long = 
             .withClaim(CLAIM_ROL, usuario.rolApp)
             .withClaim(CLAIM_SELLO, huellaSello(usuario.sello))
             .withIssuedAt(Date(ahora))
-            .withExpiresAt(Date(ahora + config.jwtDias * 24 * 60 * 60 * 1000))
+            // El personal escolar ve datos de muchos menores: su sesión dura horas, no semanas.
+            .withExpiresAt(Date(ahora + if (usuario.esPersonal) config.jwtHorasPersonal * 60 * 60 * 1000 else config.jwtDias * 24 * 60 * 60 * 1000))
             .sign(algoritmo)
     }
 
