@@ -82,8 +82,12 @@ fun Route.notificacionesRoutes(servicios: Servicios) {
                     return@post
                 }
             }
-            val porCorreo = entrada.usernames.distinct().associateWith { servicios.usuarios.credenciales(it)?.usuario?.takeIf { u -> u.activo } }
-            val porRol = rol?.let { servicios.usuarios.conRol(it) }.orEmpty()
+            // Solo cuentas visibles para sus escuelas (C-RE-01): un correo de otra escuela cuenta como "no encontrado".
+            val alcance = sesion.alcance
+            val porCorreo = entrada.usernames.distinct().associateWith {
+                servicios.usuarios.credenciales(it)?.usuario?.takeIf { u -> u.activo && servicios.usuarios.esVisible(u.id, alcance) }
+            }
+            val porRol = rol?.let { servicios.usuarios.conRolVisible(it, alcance) }.orEmpty()
             val destinatarios = (porCorreo.values.filterNotNull() + porRol).map { it.id }.distinct()
 
             val ahora = servicios.reloj()
@@ -104,7 +108,7 @@ fun Route.notificacionesRoutes(servicios: Servicios) {
                 return@get
             }
             val soloNoLeidas = call.request.queryParameters["soloNoLeidas"].toBoolean()
-            call.respond(repo.seguimiento(soloNoLeidas).map { f ->
+            call.respond(repo.seguimiento(soloNoLeidas, sesion.alcance).map { f ->
                 val n = f.notificacion
                 SeguimientoDto(
                     notificacionId = n.id.toString(), tutor = f.tutor, alumno = n.datos["alumno"].orEmpty(),

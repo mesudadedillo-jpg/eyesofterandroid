@@ -17,6 +17,8 @@ data class ComprobanteFila(
     val tamizajeId: Int?,
     val tutorId: Int,
     val alumno: String,
+    /** Escuela del alumno (C-RE-01). */
+    val plantelId: Int = 1,
     val subidoPor: String,
     val tipo: String,
     val contentType: String,
@@ -34,7 +36,7 @@ data class ComprobanteFila(
 class ComprobanteRepository(private val db: BaseDeDatos, private val cifrado: CifradoDatos) {
 
     private val select = """
-        select cp.id, cp.caso_id, cs.tamizaje_id, a.tutor_id, a.nombre || ' ' || a.apellidos as alumno,
+        select cp.id, cp.caso_id, cs.tamizaje_id, a.tutor_id, a.plantel_id, a.nombre || ' ' || a.apellidos as alumno,
                coalesce(u.email, cp.subido_por_id) as subido_por, cp.tipo, cp.content_type, cp.tamano_bytes,
                cp.subido_en, cp.estado, cp.revisado_en, cp.motivo_rechazo
         from comprobantes cp join casos cs on cs.id = cp.caso_id join alumnos a on a.id = cs.alumno_id
@@ -46,7 +48,7 @@ class ComprobanteRepository(private val db: BaseDeDatos, private val cifrado: Ci
         tutorId = rs.getInt("tutor_id"), alumno = rs.getString("alumno"), subidoPor = rs.getString("subido_por"),
         tipo = rs.getString("tipo"), contentType = rs.getString("content_type"), tamanoBytes = rs.getInt("tamano_bytes"),
         subidoEn = rs.instante("subido_en")!!, estado = rs.getString("estado"), revisadoEn = rs.instante("revisado_en"),
-        motivoRechazo = rs.getString("motivo_rechazo"),
+        motivoRechazo = rs.getString("motivo_rechazo"), plantelId = rs.getInt("plantel_id"),
     )
 
     suspend fun guardar(casoId: Int, alumno: String, usuarioId: String, usuario: String, tipo: String, contentType: String,
@@ -59,22 +61,25 @@ class ComprobanteRepository(private val db: BaseDeDatos, private val cifrado: Ci
         )
         val nombre = if (tipo == "Receta") "la receta" else "el comprobante de lentes"
         ExpedienteRepository.evento(c, cifrado, casoId, TipoEvento.COMPROBANTE, "El tutor subió $nombre desde la app.", usuario, ExpedienteRepository.hoy(ahora))
-        UsuarioRepository.idsConRol(c, RolesIdentity.ENFERMERIA).forEach {
+        val plantel = c.uno("select a.plantel_id from casos cs join alumnos a on a.id = cs.alumno_id where cs.id = ?", casoId) { it.getInt(1) }
+        plantel?.let { UsuarioRepository.idsConRolEnPlantel(c, RolesIdentity.ENFERMERIA, it) }.orEmpty().forEach {
             NotificacionRepository.crearEn(c, it, TipoNotificacion.COMPROBANTE_RECIBIDO, "Nuevo comprobante por revisar",
                 "El tutor de $alumno subió ${if (tipo == "Receta") "una receta" else "un comprobante de lentes"}.",
                 mapOf("ruta" to "comprobantes", "comprobanteId" to "$id", "casoId" to "$casoId"), ahora)
         }
-        Auditoria.registrarEn(c, usuario, "SUBIR_COMPROBANTE", "Caso", casoId, "$id")
+        Auditoria.registrarEn(c, usuario, "SUBIR_COMPROBANTE", "Caso", casoId, "$id", plantelId = plantel)
         c.uno("$select where cp.id = ?", id, fila = ::fila)!!
     }
 
     suspend fun buscar(id: UUID): ComprobanteFila? = db.leer { c -> c.uno("$select where cp.id = ?", id, fila = ::fila) }
 
     /** tutorId = null → todos (personal escolar). */
-    suspend fun listar(tutorId: Int?, estado: String?): List<ComprobanteFila> = db.leer { c ->
+    /** [alcance]: escuelas del personal (null = todas). Para el tutor se filtra por [tutorId]. */
+    suspend fun listar(tutorId: Int?, estado: String?, alcance: IntArray? = null): List<ComprobanteFila> = db.leer { c ->
         c.lista(
-            "$select where (?::int is null or a.tutor_id = ?) and (?::text is null or cp.estado = ?) order by cp.subido_en desc limit 300",
-            tutorId, tutorId, estado, estado, fila = ::fila
+            """$select where (?::int is null or a.tutor_id = ?) and (?::text is null or cp.estado = ?)
+               and (?::int[] is null or a.plantel_id = any(?::int[])) order by cp.subido_en desc limit 300""",
+            tutorId, tutorId, estado, estado, alcance, alcance, fila = ::fila
         )
     }
 
@@ -127,7 +132,8 @@ class ConsentimientoRepository(private val db: BaseDeDatos) {
             "insert into reportes_falla (usuario_id, correo, tipo, mensaje, plataforma, creado_en, estado) values (?, ?, ?, ?, ?, ?, 'Nuevo') returning id",
             usuarioId, correo?.take(256), tipo, mensaje.take(1000), plataforma, ahora
         ) { it.getInt(1) }!!
-        UsuarioRepository.idsConRol(c, RolesIdentity.DIRECCION).forEach {
+        // Los reportes de fallas los atiende el equipo que administra el sistema.
+        UsuarioRepository.idsAdministracionSistema(c).forEach {
             NotificacionRepository.crearEn(c, it, TipoNotificacion.AVISO, "Nuevo reporte de ${tipo.lowercase()}",
                 "Llegó un reporte desde $plataforma: ${mensaje.take(120)}", mapOf("ruta" to "reportes", "reporteId" to "$id"), ahora)
         }

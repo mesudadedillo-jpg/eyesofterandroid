@@ -114,14 +114,16 @@ class NotificacionRepository(private val db: BaseDeDatos) {
     data class FilaSeguimiento(val notificacion: NotificacionRecord, val tutor: String, val entregadaPor: List<String>)
 
     /** Para Enfermería: resultados enviados a tutores y si los leyeron. */
-    suspend fun seguimiento(soloNoLeidas: Boolean): List<FilaSeguimiento> = db.leer { c ->
+    /** [alcance]: solo avisos a tutores de alumnos de esas escuelas (null = todas). */
+    suspend fun seguimiento(soloNoLeidas: Boolean, alcance: IntArray? = null): List<FilaSeguimiento> = db.leer { c ->
         c.lista(
             """select n.*, coalesce(u.email, n.usuario_id) as tutor,
                       (select string_agg(distinct e.canal, ',') from entregas_notificacion e where e.notificacion_id = n.id and e.exito) as canales
                from notificaciones n left join asp_net_users u on u.id = n.usuario_id
                where n.tipo = ? and (not ? or n.leida_en is null)
+                 and (?::int[] is null or u.tutor_id in (select a.tutor_id from alumnos a where a.plantel_id = any(?::int[])))
                order by n.creada_en desc limit 300""",
-            TipoNotificacion.RESULTADO_TAMIZAJE, soloNoLeidas
+            TipoNotificacion.RESULTADO_TAMIZAJE, soloNoLeidas, alcance, alcance
         ) { rs -> FilaSeguimiento(registro(rs), rs.getString("tutor"), rs.getString("canales")?.split(',') ?: emptyList()) }
     }
 

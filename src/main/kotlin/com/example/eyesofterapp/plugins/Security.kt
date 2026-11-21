@@ -47,6 +47,9 @@ data class Sesion(val usuario: Usuario) {
     val esTutor get() = usuario.rol == RolesIdentity.TUTOR && usuario.tutorId != null
     val tutorId get() = usuario.tutorId
     val alumnoId get() = usuario.alumnoId
+    /** Escuelas visibles para el personal escolar; null = todas (administrador global). */
+    val alcance get() = usuario.alcance
+    fun permite(plantelId: Int) = usuario.permite(plantelId)
 }
 
 /** Huella corta del security_stamp: el token no lleva el sello real. */
@@ -93,6 +96,18 @@ class Tokens(private val config: Configuracion, private val reloj: () -> Long = 
             .withExpiresAt(Date(ahora + config.escritorioDias * 24 * 60 * 60 * 1000))
             .sign(algoritmo)
     }
+}
+
+/**
+ * Valida un token de la APP fuera de authenticate { } (rutas públicas que dan algo extra con sesión).
+ * null = sin token, inválido, de equipo de escritorio, o la cuenta ya no es válida.
+ */
+suspend fun Tokens.validarApp(token: String?, usuarios: UsuarioRepository): Usuario? {
+    if (token.isNullOrBlank()) return null
+    val jwt = runCatching { verificador.verify(token) }.getOrNull() ?: return null
+    if (jwt.audience?.contains(AUDIENCIA_ESCRITORIO) == true) return null
+    val usuario = jwt.subject?.let { usuarios.porId(it) } ?: return null
+    return usuario.takeIf { it.activo && jwt.getClaim(CLAIM_SELLO).asString() == huellaSello(it.sello) }
 }
 
 /** Equipo de escritorio vinculado: la cuenta que lo autorizó y el nombre del equipo. */

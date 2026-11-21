@@ -44,8 +44,21 @@ data class Usuario(
     val activo: Boolean,
     /** security_stamp de Identity: cambia al cambiar contraseña o rol; invalida los tokens viejos. */
     val sello: String? = null,
+    /** Dirección que administra TODO el sistema (todas las escuelas). */
+    val administradorGlobal: Boolean = false,
+    /** Escuelas del personal escolar (tabla usuario_planteles del portal). */
+    val planteles: List<Int> = emptyList(),
 ) {
     val esPersonal: Boolean get() = rol == RolesIdentity.DIRECCION || rol == RolesIdentity.ENFERMERIA
+
+    /**
+     * Escuelas que puede ver el personal escolar (C-RE-01). null = todas (administrador global).
+     * Mismo criterio que Seguridad/AlcanceEscuela.cs del portal: si cambias uno, cambia el otro.
+     */
+    val alcance: IntArray? get() = if (rol == RolesIdentity.DIRECCION && administradorGlobal) null else planteles.toIntArray()
+
+    /** ¿Este miembro del personal puede ver datos de esa escuela? */
+    fun permite(plantelId: Int): Boolean = esPersonal && (alcance?.contains(plantelId) ?: true)
     val rolApp: String get() = when (rol) {
         RolesIdentity.DIRECCION -> "ADMINISTRADOR"
         RolesIdentity.ENFERMERIA -> "SUPERVISOR"
@@ -67,7 +80,8 @@ class UsuarioRepository(private val db: BaseDeDatos) {
 
     private val select = """
         select u.id, u.email, u.nombre_completo, u.tutor_id, u.alumno_id, u.clinica_id, u.activo, u.security_stamp,
-               u.password_hash, u.lockout_end, u.lockout_enabled,
+               u.password_hash, u.lockout_end, u.lockout_enabled, u.administrador_global,
+               array(select up.plantel_id from usuario_planteles up where up.usuario_id = u.id order by up.plantel_id) as planteles,
                (select r.name from asp_net_user_roles ur join asp_net_roles r on r.id = ur.role_id where ur.user_id = u.id order by r.name limit 1) as rol
         from asp_net_users u
     """.trimIndent()
@@ -76,6 +90,8 @@ class UsuarioRepository(private val db: BaseDeDatos) {
         id = rs.getString("id"), email = rs.getString("email") ?: "", nombre = rs.getString("nombre_completo"),
         rol = rs.getString("rol") ?: "", tutorId = rs.entero("tutor_id"), alumnoId = rs.entero("alumno_id"),
         clinicaId = rs.entero("clinica_id"), activo = rs.getBoolean("activo"), sello = rs.getString("security_stamp"),
+        administradorGlobal = rs.getBoolean("administrador_global"),
+        planteles = (rs.getArray("planteles")?.array as? Array<*>)?.map { (it as Number).toInt() }.orEmpty(),
     )
 
     /** Busca por correo o por nombre de usuario, sin importar mayúsculas (igual que Identity). */
@@ -94,6 +110,20 @@ class UsuarioRepository(private val db: BaseDeDatos) {
         c.lista("$select join asp_net_user_roles ur2 on ur2.user_id = u.id join asp_net_roles r2 on r2.id = ur2.role_id where r2.name = ? and u.activo", rol, fila = ::usuario)
     }
 
+    /** Cuentas activas con ese rol que son visibles para esas escuelas (null = todas). */
+    suspend fun conRolVisible(rol: String, alcance: IntArray?): List<Usuario> = db.leer { c ->
+        c.lista(
+            "$select join asp_net_user_roles ur2 on ur2.user_id = u.id join asp_net_roles r2 on r2.id = ur2.role_id " +
+                "where r2.name = ? and u.activo and (?::int[] is null or $VISIBLE_PARA)",
+            rol, alcance, alcance, alcance, alcance, alcance, alcance, fila = ::usuario
+        )
+    }
+
+    /** ¿La cuenta es visible para esas escuelas? (null = todas). */
+    suspend fun esVisible(id: String, alcance: IntArray?): Boolean = alcance == null || db.leer { c ->
+        c.uno("select 1 from asp_net_users u where u.id = ? and $VISIBLE_PARA", id, alcance, alcance, alcance, alcance, alcance) { true } ?: false
+    }
+
     /** Devuelve true si con este fallo la cuenta quedó bloqueada (mismo criterio que Identity). */
     suspend fun registrarFallo(id: String, intentosMax: Int, minutos: Long, ahora: Instant): Boolean = db.transaccion { c ->
         val fallos = c.uno("update asp_net_users set access_failed_count = access_failed_count + 1 where id = ? and lockout_enabled returning access_failed_count", id) { it.getInt(1) } ?: return@transaccion false
@@ -108,6 +138,38 @@ class UsuarioRepository(private val db: BaseDeDatos) {
     }
 
     companion object {
+        /**
+         * Cuenta visible para un conjunto de escuelas (5 parámetros, el mismo arreglo): personal
+         * asignado a ellas, tutores y alumnos de ellas, y especialistas de clínicas con convenio.
+         * Mismo criterio que UsuariosController.Visibles() del portal.
+         */
+        const val VISIBLE_PARA = """(exists (select 1 from usuario_planteles up where up.usuario_id = u.id and up.plantel_id = any(?::int[]))
+             or u.tutor_id in (select a.tutor_id from alumnos a where a.plantel_id = any(?::int[]))
+             or u.tutor_id in (select t.id from tutores t where t.plantel_id = any(?::int[]))
+             or u.alumno_id in (select a.id from alumnos a where a.plantel_id = any(?::int[]))
+             or u.clinica_id in (select cv.clinica_id from convenios cv where cv.plantel_id = any(?::int[])))"""
+
+        /** Personal activo con ese rol asignado a ESA escuela (las alertas de un alumno van a su escuela). */
+        fun idsConRolEnPlantel(c: Connection, rol: String, plantelId: Int): List<String> =
+            c.lista(
+                """select u.id from asp_net_users u join asp_net_user_roles ur on ur.user_id = u.id join asp_net_roles r on r.id = ur.role_id
+                   join usuario_planteles up on up.usuario_id = u.id where r.name = ? and u.activo and up.plantel_id = ?""",
+                rol, plantelId
+            ) { it.getString(1) }.distinct()
+
+        /** Personal activo con ese rol en alguna de esas escuelas (null = todas). */
+        fun idsConRolEnPlanteles(c: Connection, rol: String, alcance: IntArray?): List<String> =
+            if (alcance == null) idsConRol(c, rol) else c.lista(
+                """select distinct u.id from asp_net_users u join asp_net_user_roles ur on ur.user_id = u.id join asp_net_roles r on r.id = ur.role_id
+                   join usuario_planteles up on up.usuario_id = u.id where r.name = ? and u.activo and up.plantel_id = any(?::int[])""",
+                rol, alcance
+            ) { it.getString(1) }
+
+        /** Administradores globales; si aún no hay, toda Dirección (como antes). */
+        fun idsAdministracionSistema(c: Connection): List<String> =
+            c.lista("select id from asp_net_users where administrador_global and activo") { it.getString(1) }
+                .ifEmpty { idsConRol(c, RolesIdentity.DIRECCION) }
+
         fun cuentasDelTutor(c: Connection, tutorId: Int): List<String> =
             c.lista("select id from asp_net_users where tutor_id = ? and activo", tutorId) { it.getString(1) }
 
@@ -119,15 +181,16 @@ class UsuarioRepository(private val db: BaseDeDatos) {
 /** Bitácora de auditoría compartida con el portal (C-RC-07, C-RFNN-06). Origen "app" o "escritorio". */
 class Auditoria(private val db: BaseDeDatos) {
     suspend fun registrar(usuario: String?, accion: String, entidad: String? = null, entidadId: Any? = null, detalle: String? = null,
-                          ip: String? = null, origen: String = "app", exito: Boolean = true) =
-        db.transaccion { c -> registrarEn(c, usuario, accion, entidad, entidadId, detalle, ip, origen, exito) }
+                          ip: String? = null, origen: String = "app", exito: Boolean = true, plantelId: Int? = null) =
+        db.transaccion { c -> registrarEn(c, usuario, accion, entidad, entidadId, detalle, ip, origen, exito, plantelId) }
 
     companion object {
         fun registrarEn(c: Connection, usuario: String?, accion: String, entidad: String? = null, entidadId: Any? = null, detalle: String? = null,
-                        ip: String? = null, origen: String = "app", exito: Boolean = true) {
+                        ip: String? = null, origen: String = "app", exito: Boolean = true, plantelId: Int? = null) {
+            // plantel_id: escuela a la que se refiere; sin escuela solo lo ve el administrador global en el portal.
             c.ejecutar(
-                "insert into auditoria (fecha, usuario, accion, entidad, entidad_id, detalle, ip, origen, exito) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                Instant.now(), usuario, accion, entidad, entidadId?.toString(), detalle?.take(500), ip, origen, exito
+                "insert into auditoria (fecha, usuario, accion, entidad, entidad_id, detalle, ip, origen, exito, plantel_id) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                Instant.now(), usuario, accion, entidad, entidadId?.toString(), detalle?.take(500), ip, origen, exito, plantelId
             )
         }
     }

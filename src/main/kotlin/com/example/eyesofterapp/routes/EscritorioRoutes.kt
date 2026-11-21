@@ -40,7 +40,8 @@ private val AGUDEZA = Regex("^20/\\d{1,3}$")
  *                                    reintentar sin miedo a duplicar (C-RFNN-03).
  *  POST /api/escritorio/incidencias  El escritorio avisa que lleva tiempo sin poder sincronizar:
  *                                    se alerta a Enfermería (C-RFNN-03).
- *  GET  /api/escritorio/alumnos?q=   Buscar (mín. 3 letras) para validar la matrícula.
+ *  GET  /api/escritorio/alumnos?q=   Buscar (mín. 3 letras) para validar la matrícula. Solo alumnos de
+ *                                    las escuelas de la cuenta que vinculó el equipo (C-RE-01).
  *  GET  /api/escritorio/equipo       ¿Sigue vinculado? ¿Quién lo autorizó?
  */
 fun Route.escritorioRoutes(servicios: Servicios) {
@@ -71,11 +72,15 @@ fun Route.escritorioRoutes(servicios: Servicios) {
             TamizajeEntrante(e.folio.trim(), e.matricula.trim(), fecha!!, semaforo!!, od, oi, e.observaciones?.trim()?.ifBlank { null }),
             servicios.reloj(),
             enviadoPor = equipo.usuario.email,
+            // El equipo hereda las escuelas de la cuenta que lo vinculó (C-RE-01).
+            alcance = equipo.usuario.alcance,
         )
         when (r) {
             is ResultadoIngesta.Duplicado -> call.respond(HttpStatusCode.OK, TamizajeRecibidoDto(r.tamizajeId.toString(), r.casoId, duplicado = true))
             is ResultadoIngesta.AlumnoDesconocido -> call.error(HttpStatusCode.UnprocessableEntity,
-                "No hay ningún alumno con la matrícula ${r.matricula}. Regístralo en el portal y vuelve a enviar.", "ALUMNO_DESCONOCIDO")
+                "No hay ningún alumno con la matrícula ${r.matricula} en las escuelas de este equipo. Regístralo en el portal y vuelve a enviar.", "ALUMNO_DESCONOCIDO")
+            is ResultadoIngesta.MatriculaAmbigua -> call.error(HttpStatusCode.Conflict,
+                "La matrícula ${r.matricula} existe en más de una de las escuelas de este equipo. Vincula el equipo con una cuenta de una sola escuela.", "MATRICULA_AMBIGUA")
             is ResultadoIngesta.Registrado -> {
                 servicios.despachador.despertar()
                 call.respond(HttpStatusCode.Created, TamizajeRecibidoDto(r.tamizajeId.toString(), r.casoId, r.casoFolio, r.tutoresAvisados, duplicado = false))
@@ -96,7 +101,8 @@ fun Route.escritorioRoutes(servicios: Servicios) {
         val texto = "El sistema de escritorio${nombreEquipo.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""} no ha podido enviar ${e.pendientes} tamizaje(s)" +
             (e.desde?.let { " desde $it" } ?: "") + ": $mensaje"
         val avisados = servicios.db.transaccion { c ->
-            val ids = UsuarioRepository.idsConRol(c, RolesIdentity.ENFERMERIA)
+            // Solo la Enfermería de las escuelas del equipo.
+            val ids = UsuarioRepository.idsConRolEnPlanteles(c, RolesIdentity.ENFERMERIA, equipo.usuario.alcance)
             ids.forEach { NotificacionRepository.crearEn(c, it, TipoNotificacion.ALERTA_ENFERMERIA, "Falla de sincronización", texto, mapOf("ruta" to "seguimiento"), ahora) }
             com.example.eyesofterapp.repos.Auditoria.registrarEn(c, equipo.usuario.email, "FALLA_SINCRONIZACION", detalle = texto, ip = call.ip(), origen = "escritorio", exito = false)
             ids.size
@@ -112,7 +118,7 @@ fun Route.escritorioRoutes(servicios: Servicios) {
             call.error(HttpStatusCode.BadRequest, "Escribe al menos 3 letras del nombre o de la matrícula para buscar.")
             return@get
         }
-        val lista = servicios.expedientes.alumnos(q.take(80))
+        val lista = servicios.expedientes.alumnos(q.take(80), equipo.usuario.alcance)
         servicios.auditoria.registrar(equipo.usuario.email, "BUSCAR_ALUMNOS", detalle = "Equipo ${equipo.equipo}: \"${q.take(80)}\" (${lista.size} resultado(s))",
             ip = call.ip(), origen = "escritorio")
         call.respond(lista.map { AlumnoEscritorioDto(it.matricula, it.nombre, it.apellidos, it.nivel, it.grado, it.grupo) })

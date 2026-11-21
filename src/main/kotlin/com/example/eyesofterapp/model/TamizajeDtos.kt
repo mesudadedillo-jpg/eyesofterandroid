@@ -151,6 +151,8 @@ data class PaseDto(
     val clinicaTelefono: String,
     /** Lo que contiene el QR: la página del portal donde el especialista lo valida. */
     val urlValidacion: String,
+    /** Beneficio del convenio de la escuela con esa clínica (p. ej. "20 % en armazones"). null = sin convenio. */
+    val convenio: String? = null,
 )
 
 @Serializable

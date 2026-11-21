@@ -59,6 +59,7 @@ fun PaseFila.toDto(urlPortal: String, ahora: Instant) = PaseDto(
     creadoEn = creadoEn.iso(), expiraEn = expiraEn.iso(), usadoEn = usadoEn?.iso(),
     clinicaId = clinica.id, clinicaNombre = clinica.nombre, clinicaDireccion = clinica.direccion, clinicaTelefono = clinica.telefono,
     urlValidacion = urlValidacion(urlPortal, codigo),
+    convenio = convenio,
 )
 
 fun ComprobanteFila.toDto() = ComprobanteDto(
@@ -73,7 +74,7 @@ suspend fun ApplicationCall.error(codigo: HttpStatusCode, mensaje: String, clave
 fun ApplicationCall.ip(): String = request.origin.remoteAddress
 
 /** ¿La sesión puede ver este tamizaje? Dirección/Enfermería: todos. Tutor: los de sus hijos. Alumno: los suyos. */
-fun Sesion.puedeVer(t: TamizajeFila) = esPersonalEscolar ||
+fun Sesion.puedeVer(t: TamizajeFila) = (esPersonalEscolar && permite(t.plantelId)) ||
     (esTutor && t.tutorId == tutorId) ||
     (alumnoId != null && t.alumnoId == alumnoId)
 

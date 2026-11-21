@@ -18,6 +18,13 @@ escolar de tamizaje visual para la Escuela Primaria-Secundaria METANOIA (Tulanci
 | Portal web (dueño de la base y de las cuentas) | `https://github.com/mesudadedillo-jpg/eyesofterweb` |
 | Contrato de la API | [`docs/API.md`](docs/API.md) |
 
+## Varias escuelas
+
+Una sola base atiende a varias escuelas. El personal escolar (Dirección/Enfermería) solo ve lo de las
+escuelas que el portal le asignó (`usuario_planteles`); el **administrador global** ve todas. Lo de otra
+escuela responde 404, las alertas van a la Enfermería de la escuela del alumno y el escritorio trabaja con
+las escuelas de quien lo vinculó. Detalle en [`docs/API.md`](docs/API.md) → "Varias escuelas".
+
 ## Arquitectura
 
 ```

@@ -121,7 +121,7 @@ fun Route.comprobantesRoutes(servicios: Servicios) {
             return@get
         }
         val lista = when {
-            sesion.esPersonalEscolar -> servicios.comprobantes.listar(null, estado)
+            sesion.esPersonalEscolar -> servicios.comprobantes.listar(null, estado, sesion.alcance)
             sesion.esTutor -> if (call.exigirConsentimiento(servicios, sesion)) servicios.comprobantes.listar(sesion.tutorId, estado) else return@get
             else -> emptyList()
         }
@@ -132,7 +132,7 @@ fun Route.comprobantesRoutes(servicios: Servicios) {
         val sesion = call.sesion()
         val id = runCatching { UUID.fromString(call.parameters["id"]) }.getOrNull()
         val c = id?.let { servicios.comprobantes.buscar(it) }
-        if (c == null || !(sesion.esPersonalEscolar || (sesion.esTutor && c.tutorId == sesion.tutorId))) {
+        if (c == null || !((sesion.esPersonalEscolar && sesion.permite(c.plantelId)) || (sesion.esTutor && c.tutorId == sesion.tutorId))) {
             if (c != null) call.denegar(servicios, sesion, "Comprobante", c.id, "Comprobante no encontrado")
             else call.error(HttpStatusCode.NotFound, "Comprobante no encontrado")
             return@get
@@ -160,6 +160,12 @@ fun Route.comprobantesRoutes(servicios: Servicios) {
             return@post
         }
         val id = runCatching { UUID.fromString(call.parameters["id"]) }.getOrNull()
+        // Solo comprobantes de alumnos de sus escuelas (C-RE-01).
+        val existente = id?.let { servicios.comprobantes.buscar(it) }
+        if (existente != null && !sesion.permite(existente.plantelId)) {
+            call.denegar(servicios, sesion, "Comprobante", existente.id, "Comprobante no encontrado")
+            return@post
+        }
         val revisado = id?.let { servicios.comprobantes.revisar(it, entrada.aprobado, sesion.email, motivo, servicios.reloj()) }
         if (revisado == null) {
             if (id == null || servicios.comprobantes.buscar(id) == null) call.error(HttpStatusCode.NotFound, "Comprobante no encontrado")

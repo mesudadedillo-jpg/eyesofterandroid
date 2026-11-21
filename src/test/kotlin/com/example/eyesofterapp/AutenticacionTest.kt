@@ -161,7 +161,8 @@ class AutenticacionTest {
         }.status)
         assertEquals(2, BasePrueba.cuenta("select count(*) from reportes_falla where tipo = 'Falla' and plataforma = 'android'"))
         assertEquals("tutor@eyesofter.mx", BasePrueba.consulta("select correo from reportes_falla where usuario_id is not null") { it.getString(1) })
-        // Dirección recibe el aviso en su bandeja.
-        assertEquals(2, BasePrueba.cuenta("select count(*) from notificaciones where usuario_id = ?", BasePrueba.idDe("direccion@eyesofter.mx")))
+        // Lo recibe quien administra el sistema (administrador global), no la Dirección de cada escuela.
+        assertEquals(2, BasePrueba.cuenta("select count(*) from notificaciones where usuario_id = ?", BasePrueba.idDe("global@eyesofter.mx")))
+        assertEquals(0, BasePrueba.cuenta("select count(*) from notificaciones where usuario_id = ?", BasePrueba.idDe("direccion@eyesofter.mx")))
     }
 }

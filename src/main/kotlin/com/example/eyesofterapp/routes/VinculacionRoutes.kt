@@ -31,16 +31,17 @@ fun Route.vinculacionRoutes(servicios: Servicios) {
     post("/api/escritorio/vinculaciones") {
         val e = runCatching { call.receive<VinculacionEntradaDto>() }.getOrElse { VinculacionEntradaDto() }
         val equipo = e.equipo.trim().filter { !it.isISOControl() }.take(60).ifBlank { "Equipo de escritorio" }
-        val s = servicios.vinculaciones.crear(equipo)
-        if (s == null) {
+        val creada = servicios.vinculaciones.crear(equipo)
+        if (creada == null) {
             call.error(HttpStatusCode.ServiceUnavailable, "Hay demasiadas solicitudes de vinculación abiertas. Intenta en unos minutos.")
             return@post
         }
-        call.respond(HttpStatusCode.Created, VinculacionCreadaDto(s.id, s.codigo, "/escritorio/vincular?codigo=${s.codigo}", servicios.vinculaciones.vigenciaSegundos))
+        val s = creada.solicitud
+        call.respond(HttpStatusCode.Created, VinculacionCreadaDto(creada.secreto, s.codigo, "/escritorio/vincular?codigo=${s.codigo}", servicios.vinculaciones.vigenciaSegundos))
     }
 }
 
-/** El escritorio pregunta cada pocos segundos; va fuera del límite por IP (lo protege el id secreto de 256 bits). */
+/** El escritorio pregunta cada pocos segundos; va fuera del límite por IP (lo protege el secreto de 256 bits). */
 fun Route.vinculacionEstadoRoutes(servicios: Servicios) {
     post("/api/escritorio/vinculaciones/estado") {
         val e = runCatching { call.receive<VinculacionEstadoEntradaDto>() }.getOrElse { VinculacionEstadoEntradaDto() }
@@ -90,8 +91,20 @@ fun Route.vinculacionFormularioRoutes(servicios: Servicios) {
             call.pagina(formularioAcceso(s, "Solo Dirección o Enfermería pueden autorizar un equipo de escritorio.", correo), HttpStatusCode.Forbidden)
             return@post
         }
-        servicios.vinculaciones.aprobar(s, u)
-        servicios.auditoria.registrar(u.email, "VINCULAR_EQUIPO", detalle = "Equipo «${s.equipo}» (código ${s.codigo})", ip = call.ip(), origen = "escritorio")
+        // Un equipo trabaja con las escuelas de quien lo aprueba: con el administrador global vería
+        // todas y no sabría de qué escuela es cada matrícula. Se vincula con una cuenta de la escuela.
+        if (u.alcance == null || u.planteles.isEmpty()) {
+            servicios.auditoria.registrar(u.email, "VINCULAR_EQUIPO", detalle = "Rechazado: administrador global o cuenta sin escuela (equipo ${s.equipo})",
+                ip = call.ip(), origen = "escritorio", exito = false)
+            call.pagina(formularioAcceso(s, "Vincula el equipo con una cuenta de Dirección o Enfermería de la escuela donde se usará (no con el administrador global ni con una cuenta sin escuela).", correo), HttpStatusCode.Forbidden)
+            return@post
+        }
+        if (!servicios.vinculaciones.aprobar(s, u)) {
+            call.pagina(formularioCodigo("La solicitud venció mientras iniciabas sesión. Pulsa «Vincular este equipo» otra vez en el escritorio."), HttpStatusCode.Gone)
+            return@post
+        }
+        servicios.auditoria.registrar(u.email, "VINCULAR_EQUIPO", detalle = "Equipo «${s.equipo}» (código ${s.codigo})", ip = call.ip(), origen = "escritorio",
+            plantelId = u.planteles.singleOrNull())
         call.pagina(listo(s, u.nombre))
     }
 }

@@ -50,8 +50,8 @@ class Servicios(
     val expedientes = ExpedienteRepository(db, cifrado, config.diasVigenciaPase)
     val comprobantes = ComprobanteRepository(db, cifrado)
     val consentimientos = ConsentimientoRepository(db)
-    /** Solicitudes para vincular equipos de escritorio (en memoria, duran 10 min). */
-    val vinculaciones = Vinculaciones(reloj)
+    /** Solicitudes para vincular equipos de escritorio (en la base, duran 10 min). */
+    val vinculaciones = Vinculaciones(db, usuarios, reloj)
 
     /** Cliente HTTP para hablar con Firebase y Resend. Se crea solo si algún canal lo usa. */
     private val httpCreado = lazy {
