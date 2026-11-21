@@ -30,7 +30,6 @@ import java.sql.Connection
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
-const val API_KEY_PRUEBA = "clave-escritorio-prueba"
 const val PASSWORD = "Eyesofter123!"
 const val VERSION_AVISO = "2026-11"
 
@@ -39,7 +38,6 @@ fun configPrueba() = Configuracion(
     databaseUrl = "",
     claveDatos = CifradoDatos.CLAVE_DESARROLLO,
     jwtSecret = "secreto-de-prueba",
-    apiKeyEscritorio = API_KEY_PRUEBA,
     firebaseServiceAccountJson = null,
     resendApiKey = null,
     correoRemitente = null,
@@ -171,3 +169,10 @@ suspend fun HttpClient.login(usuario: String, password: String = PASSWORD): Http
     }
 
 suspend fun HttpClient.tokenDe(usuario: String, password: String = PASSWORD): String = login(usuario, password).body<LoginResponseDto>().token
+
+/**
+ * Token de un equipo de escritorio ya vinculado por Enfermería, para las pruebas que solo
+ * necesitan mandar tamizajes. El flujo completo de vinculación se prueba en EscritorioTest.
+ */
+suspend fun Servicios.tokenEscritorio(email: String = "enfermeria@eyesofter.mx", equipo: String = "Enfermería PC1"): String =
+    tokens.crearEscritorio(usuarios.porId(BasePrueba.idDe(email))!!, equipo)

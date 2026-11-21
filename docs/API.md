@@ -63,7 +63,8 @@ En producción solo HTTPS (TLS 1.2+, lo pone Railway; C-RC-03). La app de releas
 |---|---|---|
 | Nadie | — | `GET /`, `GET /salud`, `POST /api/login`, `GET /opticas/cercanas`, `GET /api/clinicas`, `POST /api/reportes` |
 | La app (con sesión) | `Authorization: Bearer <token>` con el `token` del login | Todo lo demás bajo `/api/` |
-| Sistema de escritorio | `X-Api-Key: <ESCRITORIO_API_KEY>` | `/api/escritorio/...` |
+| Nadie (vinculación) | — | `POST /api/escritorio/vinculaciones`, `POST /api/escritorio/vinculaciones/estado`, `GET/POST /escritorio/vincular` (página web) |
+| Equipo de escritorio vinculado | `Authorization: Bearer <token del equipo>` (§13). **No** sirve el token de la app, ni el del equipo en las rutas de la app | Resto de `/api/escritorio/...` |
 
 **401** `{"error": "Sesión inválida o vencida. Inicia sesión de nuevo."}` cuando: no hay token, venció
 (dura 30 días), lo firmó otro servidor, **la cuenta fue desactivada** en el portal, o **cambió la
@@ -98,7 +99,7 @@ Dirección la consulta en el portal (Auditoría).
 - `db`: la base respondió en menos de 2 s. Si no, `status` es `"degradado"` (sigue siendo **200**
   para que Railway no reinicie el servicio en bucle mientras la base arranca).
 - `version`: commit desplegado en Railway (`dev` en local).
-- `push` / `correo` / `escritorio`: si están configurados Firebase, Resend y `ESCRITORIO_API_KEY`.
+- `push` / `correo`: si están configurados Firebase y Resend. `escritorio`: siempre `true` (la vinculación de equipos ya no depende de una clave).
 - `pendientesEnvio`: notificaciones esperando entrega. Si crece y no baja, algo falla con push/correo.
 - Railway la usa como *healthcheck* (`railway.json`).
 
@@ -337,9 +338,36 @@ El archivo se guarda **cifrado** en la base (C-RC-04). Al subirlo se avisa a Enf
 - `tipo`: `FALLA` o `DUDA`. `mensaje`: 10 a 1000 caracteres. `correo` obligatorio sin sesión.
 - **201** `{"id": 7}`. Dirección lo recibe en su bandeja y lo atiende en el portal (Soporte).
 
-## 13. Sistema de escritorio 🔑 (`X-Api-Key`)
+## 13. Sistema de escritorio 🔑 (equipo vinculado)
 
-**401** sin clave o con clave equivocada (se registra). **503** si el servidor no tiene `ESCRITORIO_API_KEY`.
+**Ya no hay una clave compartida (`ESCRITORIO_API_KEY` / `X-Api-Key`).** Con ella, cualquiera que
+instalara el escritorio y la tuviera podía buscar a todos los alumnos de la escuela. Ahora cada
+computadora se **vincula** con la cuenta del portal de alguien de **Dirección o Enfermería**, como
+cuando una tele pide "entra a esta página y escribe el código":
+
+1. `POST /api/escritorio/vinculaciones` `{"equipo": "Enfermería PC1"}` → **201**
+   `{"solicitud": "<secreto>", "codigo": "K7QM-3RTA", "ruta": "/escritorio/vincular?codigo=K7QM-3RTA", "expiraEnSegundos": 600, "intervaloSegundos": 3}`.
+   Límite de 30 por minuto por IP. **503** si hay demasiadas solicitudes abiertas.
+2. El escritorio abre `{servidor}{ruta}` en el navegador y muestra el `codigo`. La página pide
+   correo y contraseña **del portal** (mismo bloqueo de 3 intentos) y que se confirme que el código
+   coincide con el de la pantalla. Solo Dirección y Enfermería pueden aprobar (**403** a los demás).
+   Queda en la bitácora (`VINCULAR_EQUIPO`).
+3. El escritorio pregunta cada `intervaloSegundos`: `POST /api/escritorio/vinculaciones/estado`
+   `{"solicitud": "<secreto>"}` → **202** `{"estado":"PENDIENTE"}` · **200**
+   `{"estado":"APROBADA","token":"…","usuario":"enfermeria@…","nombre":"…","equipo":"Enfermería PC1"}`
+   (el token se entrega **una sola vez**) · **410** `{"codigo":"VINCULACION_EXPIRADA"}` si venció o ya se usó.
+4. Desde ahí, todas las rutas de abajo llevan `Authorization: Bearer <token del equipo>`.
+
+El token dura `ESCRITORIO_DIAS` (180) y va ligado a la cuenta que lo aprobó: deja de servir **al
+instante** si esa cuenta se desactiva, cambia su contraseña o su rol (se compara el `security_stamp`).
+Así se retira el acceso a un equipo. Las solicitudes viven en memoria 10 minutos; si el servidor se
+reinicia a la mitad, basta con volver a pulsar "Vincular".
+
+**401** `{"codigo":"EQUIPO_NO_VINCULADO"}` sin token, con uno inválido o revocado (se registra como `ACCESO_DENEGADO`).
+
+### `GET /api/escritorio/equipo`
+
+`{"equipo": "Enfermería PC1", "usuario": "enfermeria@eyesofter.mx", "nombre": "…", "rol": "SUPERVISOR"}` — para "Probar conexión".
 
 ### `POST /api/escritorio/tamizajes` (C-RFN-02)
 
@@ -367,9 +395,11 @@ creciente; como el folio es idempotente, reenviar nunca duplica. Si sigue fallan
 `{"mensaje": "Sin conexión a internet", "pendientes": 12, "desde": "2026-11-19T08:00:00Z", "equipo": "Enfermería PC1"}`
 → **201** `{"enfermeriaAvisada": 2}`. Enfermería recibe `ALERTA_ENFERMERIA` "Falla de sincronización".
 
-### `GET /api/escritorio/alumnos[?q=]`
+### `GET /api/escritorio/alumnos?q=`
 
-Para validar la matrícula antes de capturar: `[{"matricula","nombre","apellidos","nivel","grado","grupo","usaLentes"}]` (máx. 500).
+**Búsqueda**, no listado: `q` obligatorio de al menos 3 caracteres (si no, **400**); `%` y `_` se buscan
+literalmente. Devuelve como máximo 20: `[{"matricula","nombre","apellidos","nivel","grado","grupo"}]`.
+Cada búsqueda queda en la bitácora con la cuenta que vinculó el equipo (`BUSCAR_ALUMNOS`).
 
 ---
 
@@ -395,6 +425,7 @@ Si cambias una, cámbiala en los dos (`eyesofterweb/Servicios/Expedientes.cs` y 
 
 | Fecha | Cambio |
 |---|---|
+| 2026-11-21 | **Escritorio: adiós a `ESCRITORIO_API_KEY`.** Cada equipo se vincula en el navegador con una cuenta de Dirección o Enfermería (`/api/escritorio/vinculaciones`, `/escritorio/vincular`) y usa `Authorization: Bearer <token del equipo>`. `GET /api/escritorio/alumnos` exige `q` de 3+ caracteres, devuelve máx. 20 y ya no trae `usaLentes`. Nueva `GET /api/escritorio/equipo`. La bitácora registra quién envía y quién busca. |
 | 2026-11-20 | **Base PostgreSQL compartida con el portal.** Login con el correo y las cuentas de Identity (bloqueo compartido, 403 cuenta desactivada; el token deja de servir si se desactiva la cuenta o cambia la contraseña). `UserDto` agrega `id` y `requiereConsentimiento`. Nuevas: `/api/consentimiento`, `/api/clinicas`, destino/pase.png/citas (§9), `/api/reportes`, `/api/escritorio/incidencias` y `/alumnos`. `TamizajeDto` agrega `alumnoId`, `campana` y `caso` (pase, citas, línea de tiempo); ids numéricos en texto. **El escritorio manda `matricula` y agudezas en lugar de `alumnoNombre`/`tutorUsername`.** Comprobantes agregan `casoId` y `alumno`; `tutor` es el correo. `/opticas/cercanas` sale de la base: asociadas primero, agrega `tipo` y `horario`. `/salud` revisa la base y agrega `pendientesEnvio`. `GET /` responde JSON. |
 | 2026-11-19 (b) | `/salud` agrega `version`, `push`, `correo`, `escritorio`. Login responde 429 tras 3 fallos. Recetas y comprobantes. CORS permite `DELETE`. |
 | 2026-11-19 | El `token` del login es un JWT real. Notificaciones, confirmación de lectura, dispositivos, tamizajes, avisos, seguimiento y recepción desde el escritorio. |

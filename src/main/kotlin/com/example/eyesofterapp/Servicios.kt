@@ -17,6 +17,7 @@ import com.example.eyesofterapp.repos.ExpedienteRepository
 import com.example.eyesofterapp.repos.NotificacionRepository
 import com.example.eyesofterapp.repos.UsuarioRepository
 import com.example.eyesofterapp.seguridad.CifradoDatos
+import com.example.eyesofterapp.seguridad.Vinculaciones
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -49,6 +50,8 @@ class Servicios(
     val expedientes = ExpedienteRepository(db, cifrado, config.diasVigenciaPase)
     val comprobantes = ComprobanteRepository(db, cifrado)
     val consentimientos = ConsentimientoRepository(db)
+    /** Solicitudes para vincular equipos de escritorio (en memoria, duran 10 min). */
+    val vinculaciones = Vinculaciones(reloj)
 
     /** Cliente HTTP para hablar con Firebase y Resend. Se crea solo si algún canal lo usa. */
     private val httpCreado = lazy {

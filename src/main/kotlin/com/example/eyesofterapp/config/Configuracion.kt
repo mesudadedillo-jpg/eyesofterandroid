@@ -22,8 +22,11 @@ data class Configuracion(
     val jwtSecret: String,
     /** Cuántos días dura una sesión de la app. */
     val jwtDias: Long = 30,
-    /** Clave que debe mandar el sistema de escritorio en X-Api-Key. null = ruta desactivada. */
-    val apiKeyEscritorio: String?,
+    /**
+     * Cuántos días dura la vinculación de un equipo de escritorio. Ya no hay una clave
+     * compartida: cada equipo se vincula con una cuenta de Dirección o Enfermería.
+     */
+    val escritorioDias: Long = 180,
     /** Contenido JSON de la cuenta de servicio de Firebase. null = push desactivada. */
     val firebaseServiceAccountJson: String?,
     /** API key de Resend para el correo de respaldo. null = correo desactivado. */
@@ -81,7 +84,7 @@ data class Configuracion(
                 claveDatos = clave,
                 jwtSecret = secreto,
                 jwtDias = texto("JWT_DIAS")?.toLongOrNull() ?: 30,
-                apiKeyEscritorio = texto("ESCRITORIO_API_KEY"),
+                escritorioDias = texto("ESCRITORIO_DIAS")?.toLongOrNull() ?: 180,
                 firebaseServiceAccountJson = firebase,
                 resendApiKey = texto("RESEND_API_KEY"),
                 correoRemitente = texto("CORREO_REMITENTE"),

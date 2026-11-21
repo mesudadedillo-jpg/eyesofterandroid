@@ -30,7 +30,7 @@ fun Route.saludRoutes(servicios: Servicios) {
                 version = servicios.config.version,
                 push = servicios.canalesActivos.contains("push"),
                 correo = servicios.canalesActivos.contains("correo"),
-                escritorio = servicios.config.apiKeyEscritorio != null,
+                escritorio = true, // Vinculación de equipos siempre disponible (ya no depende de una clave).
                 pendientesEnvio = pendientes ?: 0,
             )
         )

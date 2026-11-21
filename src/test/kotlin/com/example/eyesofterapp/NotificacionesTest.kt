@@ -12,7 +12,6 @@ import io.ktor.client.call.body
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
-import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
@@ -39,7 +38,7 @@ class NotificacionesTest {
 
     private suspend fun HttpClient.recibir(folio: String = "ESC-1", matricula: String = "A001", semaforo: String = "AMARILLO") =
         post("/api/escritorio/tamizajes") {
-            header("X-Api-Key", API_KEY_PRUEBA); contentType(ContentType.Application.Json)
+            bearerAuth(servicios.tokenEscritorio()); contentType(ContentType.Application.Json)
             setBody(TamizajeEntradaDto(folio, matricula, hoy.toString(), semaforo))
         }.body<TamizajeRecibidoDto>()
 

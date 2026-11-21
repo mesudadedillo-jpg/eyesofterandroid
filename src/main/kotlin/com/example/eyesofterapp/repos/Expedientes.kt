@@ -172,7 +172,7 @@ class ExpedienteRepository(private val db: BaseDeDatos, private val cifrado: Cif
      *  - amarillo o rojo abre caso (o actualiza el caso activo: un alumno tiene un solo caso abierto);
      *  - deja la notificación al tutor y el evento en la línea de tiempo.
      */
-    suspend fun ingestar(e: TamizajeEntrante, ahora: Instant): ResultadoIngesta = db.transaccion { c ->
+    suspend fun ingestar(e: TamizajeEntrante, ahora: Instant, enviadoPor: String = "escritorio"): ResultadoIngesta = db.transaccion { c ->
         // Dos envíos simultáneos del mismo folio: el segundo espera al primero y lo ve como duplicado.
         c.uno("select pg_advisory_xact_lock(hashtext(?))", "tamizaje:" + e.folio) { }
         c.uno("select t.id, (select cs.id from casos cs where cs.tamizaje_id = t.id limit 1) as caso from tamizajes t where t.folio = ?", e.folio) {
@@ -245,7 +245,7 @@ class ExpedienteRepository(private val db: BaseDeDatos, private val cifrado: Cif
                     mapOf("ruta" to "seguimiento", "tamizajeId" to "$tamizajeId"), ahora)
             }
         }
-        Auditoria.registrarEn(c, "escritorio", "RECIBIR_TAMIZAJE", "Tamizaje", tamizajeId, e.folio, origen = "escritorio")
+        Auditoria.registrarEn(c, enviadoPor, "RECIBIR_TAMIZAJE", "Tamizaje", tamizajeId, e.folio, origen = "escritorio")
         ResultadoIngesta.Registrado(tamizajeId, casoId, casoFolio, tutores.size)
     }
 
@@ -340,16 +340,20 @@ class ExpedienteRepository(private val db: BaseDeDatos, private val cifrado: Cif
 
     // ------------------------------------------------------------------ escritorio: consultas de apoyo
 
-    data class AlumnoEscritorio(val matricula: String, val nombre: String, val apellidos: String, val nivel: String, val grado: Int, val grupo: String, val usaLentes: Boolean)
+    data class AlumnoEscritorio(val matricula: String, val nombre: String, val apellidos: String, val nivel: String, val grado: Int, val grupo: String)
 
-    /** Para que el escritorio valide la matrícula antes de capturar el tamizaje. */
-    suspend fun alumnos(texto: String?): List<AlumnoEscritorio> = db.leer { c ->
-        val q = "%" + (texto?.trim() ?: "") + "%"
+    /**
+     * Para que el escritorio valide la matrícula antes de capturar el tamizaje. Es una
+     * BÚSQUEDA, no un listado: pide al menos 3 letras y devuelve pocos resultados, para
+     * que un equipo no pueda descargar el padrón completo de alumnos.
+     */
+    suspend fun alumnos(texto: String, limite: Int = 20): List<AlumnoEscritorio> = db.leer { c ->
+        val q = "%" + texto.trim().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         c.lista(
-            "select * from alumnos where matricula ilike ? or (nombre || ' ' || apellidos) ilike ? order by grado, grupo, apellidos limit 500", q, q
+            "select * from alumnos where matricula ilike ? or (nombre || ' ' || apellidos) ilike ? order by grado, grupo, apellidos limit ?", q, q, limite
         ) {
             AlumnoEscritorio(it.getString("matricula"), it.getString("nombre"), it.getString("apellidos"), it.getString("nivel"),
-                it.getInt("grado"), it.getString("grupo"), it.getBoolean("usa_lentes"))
+                it.getInt("grado"), it.getString("grupo"))
         }
     }
 

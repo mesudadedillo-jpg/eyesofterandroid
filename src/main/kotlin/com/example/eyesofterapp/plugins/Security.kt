@@ -25,6 +25,14 @@ private const val EMISOR = "eyesofter-backend"
 private const val CLAIM_USUARIO = "username"
 private const val CLAIM_ROL = "role"
 private const val CLAIM_SELLO = "sello"
+private const val CLAIM_EQUIPO = "equipo"
+
+/**
+ * Audiencia de los tokens de un equipo de escritorio vinculado. Un token así SOLO sirve en
+ * /api/escritorio/...; las rutas de la app lo rechazan (y al revés: el token de la app no
+ * sirve como equipo de escritorio).
+ */
+const val AUDIENCIA_ESCRITORIO = "escritorio"
 
 /**
  * Quién está llamando. Se arma en cada petición con los datos ACTUALES de la base, no con lo
@@ -51,6 +59,9 @@ class Tokens(private val config: Configuracion, private val reloj: () -> Long = 
 
     val verificador = JWT.require(algoritmo).withIssuer(EMISOR).build()
 
+    /** Solo acepta tokens de equipo de escritorio (audiencia [AUDIENCIA_ESCRITORIO]). */
+    val verificadorEscritorio = JWT.require(algoritmo).withIssuer(EMISOR).withAudience(AUDIENCIA_ESCRITORIO).build()
+
     fun crear(usuario: Usuario): String {
         val ahora = reloj()
         return JWT.create()
@@ -63,6 +74,40 @@ class Tokens(private val config: Configuracion, private val reloj: () -> Long = 
             .withExpiresAt(Date(ahora + config.jwtDias * 24 * 60 * 60 * 1000))
             .sign(algoritmo)
     }
+
+    /**
+     * Token de un equipo de escritorio, emitido cuando Dirección o Enfermería aprueba la
+     * vinculación en el navegador. Va ligado a ESA cuenta: si se desactiva, cambia su
+     * contraseña o deja de ser personal escolar, el equipo queda desvinculado al instante.
+     */
+    fun crearEscritorio(usuario: Usuario, equipo: String): String {
+        val ahora = reloj()
+        return JWT.create()
+            .withIssuer(EMISOR)
+            .withAudience(AUDIENCIA_ESCRITORIO)
+            .withSubject(usuario.id)
+            .withClaim(CLAIM_USUARIO, usuario.email)
+            .withClaim(CLAIM_SELLO, huellaSello(usuario.sello))
+            .withClaim(CLAIM_EQUIPO, equipo)
+            .withIssuedAt(Date(ahora))
+            .withExpiresAt(Date(ahora + config.escritorioDias * 24 * 60 * 60 * 1000))
+            .sign(algoritmo)
+    }
+}
+
+/** Equipo de escritorio vinculado: la cuenta que lo autorizó y el nombre del equipo. */
+data class SesionEscritorio(val usuario: Usuario, val equipo: String)
+
+/**
+ * Valida un token de equipo de escritorio con los datos ACTUALES de la cuenta.
+ * null = no hay token, es de otro tipo, venció, o la cuenta ya no puede autorizar equipos.
+ */
+suspend fun Tokens.validarEscritorio(token: String?, usuarios: UsuarioRepository): SesionEscritorio? {
+    if (token.isNullOrBlank()) return null
+    val jwt = runCatching { verificadorEscritorio.verify(token) }.getOrNull() ?: return null
+    val usuario = jwt.subject?.let { usuarios.porId(it) } ?: return null
+    if (!usuario.activo || !usuario.esPersonal || jwt.getClaim(CLAIM_SELLO).asString() != huellaSello(usuario.sello)) return null
+    return SesionEscritorio(usuario, jwt.getClaim(CLAIM_EQUIPO).asString().orEmpty())
 }
 
 fun Application.configureSecurity(tokens: Tokens, usuarios: UsuarioRepository) {
@@ -71,6 +116,8 @@ fun Application.configureSecurity(tokens: Tokens, usuarios: UsuarioRepository) {
             realm = "eyesofter"
             verifier(tokens.verificador)
             validate { credencial ->
+                // Un token de equipo de escritorio no abre las rutas de la app.
+                if (credencial.payload.audience?.contains(AUDIENCIA_ESCRITORIO) == true) return@validate null
                 val id = credencial.payload.subject ?: return@validate null
                 val usuario = usuarios.porId(id) ?: return@validate null
                 // Cuenta desactivada, o contraseña/rol cambiados desde que se emitió el token → sesión inválida.
