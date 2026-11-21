@@ -35,4 +35,6 @@ USER eyesofter
 EXPOSE 8080
 # MaxRAMPercentage: Java usa hasta el 75 % de la memoria que Railway le da al
 # contenedor, en vez de calcularla sobre la de toda la máquina.
-CMD ["java", "-XX:MaxRAMPercentage=75", "-jar", "eyesofter-backend.jar"]
+# ExitOnOutOfMemoryError: si se acaba la memoria, el proceso termina (y Railway lo
+# reinicia) en vez de quedar vivo pero roto sin responder.
+CMD ["java", "-XX:MaxRAMPercentage=75", "-XX:+ExitOnOutOfMemoryError", "-jar", "eyesofter-backend.jar"]
