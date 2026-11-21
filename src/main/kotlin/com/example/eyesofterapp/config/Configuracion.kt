@@ -50,6 +50,11 @@ data class Configuracion(
     val loginBloqueoMin: Long = 15,
     /** Commit desplegado; Railway lo pone en RAILWAY_GIT_COMMIT_SHA. */
     val version: String = "dev",
+    /** Crear las tablas del portal si faltan (esquema.sql). CREAR_ESQUEMA=false lo desactiva. */
+    val crearEsquema: Boolean = false,
+    /** Cuenta de administrador que se crea al arrancar si no existe (ADMIN_EMAIL / ADMIN_PASSWORD). */
+    val adminEmail: String? = null,
+    val adminPassword: String? = null,
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(Configuracion::class.java)
@@ -90,6 +95,9 @@ data class Configuracion(
                 loginIntentosMax = texto("LOGIN_INTENTOS_MAX")?.toIntOrNull() ?: 3,
                 loginBloqueoMin = texto("LOGIN_BLOQUEO_MIN")?.toLongOrNull() ?: 15,
                 version = texto("RAILWAY_GIT_COMMIT_SHA")?.take(7) ?: "dev",
+                crearEsquema = texto("CREAR_ESQUEMA")?.lowercase() != "false",
+                adminEmail = texto("ADMIN_EMAIL"),
+                adminPassword = texto("ADMIN_PASSWORD"),
             )
         }
     }

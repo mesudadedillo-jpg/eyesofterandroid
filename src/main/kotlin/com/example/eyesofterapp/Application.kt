@@ -1,6 +1,7 @@
 package com.example.eyesofterapp
 
 import com.example.eyesofterapp.config.Configuracion
+import com.example.eyesofterapp.db.PreparacionBase
 import com.example.eyesofterapp.plugins.configureCors
 import com.example.eyesofterapp.plugins.configureErrores
 import com.example.eyesofterapp.plugins.configureProteccion
@@ -43,6 +44,7 @@ fun Application.module() {
     val config = Configuracion.desdeEntorno()
     val servicios = Servicios(config)
     modulo(servicios)
+    PreparacionBase(servicios.db, config.crearEsquema, config.adminEmail, config.adminPassword).iniciar(this)
     // Application es un CoroutineScope: lo que se lance aquí se cancela al apagar el servidor.
     config.despachoSegundos?.let { servicios.despachador.iniciar(this, it) }
     config.recordatorioRevisionMin?.let { servicios.recordatorios.iniciar(this, it) }
