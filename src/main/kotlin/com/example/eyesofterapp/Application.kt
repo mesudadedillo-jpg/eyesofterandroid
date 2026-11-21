@@ -11,6 +11,7 @@ import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationStopped
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
+import org.slf4j.LoggerFactory
 
 /**
  *  Punto de entrada del servidor.
@@ -23,9 +24,18 @@ import io.ktor.server.netty.Netty
  * localhost. Sin esto, Railway o el emulador de Android no podrían conectarse.
  */
 fun main() {
+    val log = LoggerFactory.getLogger("com.example.eyesofterapp.Main")
+    // Cualquier error que escape de un hilo queda en los logs de Railway con su causa,
+    // en vez de perderse.
+    Thread.setDefaultUncaughtExceptionHandler { hilo, e -> log.error("Error no atrapado en el hilo ${hilo.name}", e) }
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
-    embeddedServer(Netty, port = port, host = "0.0.0.0", module = Application::module)
-        .start(wait = true)
+    try {
+        embeddedServer(Netty, port = port, host = "0.0.0.0", module = Application::module)
+            .start(wait = true)
+    } catch (e: Throwable) {
+        log.error("El servidor no pudo arrancar o se detuvo por un error", e)
+        throw e
+    }
 }
 
 /** Configuración real: lee las variables de entorno y arranca el despachador y los recordatorios. */

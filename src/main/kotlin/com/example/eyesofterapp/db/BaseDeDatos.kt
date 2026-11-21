@@ -67,6 +67,16 @@ class BaseDeDatos(val fuente: DataSource) {
             }
             config.maximumPoolSize = maxConexiones
             config.poolName = "eyesofter"
+            // Por defecto Hikari intenta conectarse al crear el pool y, si la base no responde
+            // (Postgres reiniciándose, mantenimiento de Railway, red privada aún sin DNS), lanza
+            // una excepción y el servidor se cae al arrancar. Tras unos reintentos Railway deja
+            // el servicio en CRASHED. Con -1 el servidor arranca igual, /salud dice "degradado"
+            // y las conexiones se abren solas en cuanto la base vuelve.
+            config.initializationFailTimeout = -1
+            // Cuánto espera una consulta por una conexión antes de fallar (no tumba el proceso).
+            config.connectionTimeout = 10_000
+            // Revisa las conexiones ociosas para descartar las que la base o la red cerraron.
+            config.keepaliveTime = 60_000
             return BaseDeDatos(HikariDataSource(config))
         }
     }
