@@ -42,6 +42,20 @@ class ClinicaRepository(private val db: BaseDeDatos) {
         return activas().filter { q == null || normalizar("${it.nombre} ${it.ciudad} ${it.direccion} ${it.codigoPostal.orEmpty()}").contains(q) }
     }
 
+    /**
+     * Convenios vigentes de las escuelas de los hijos de un tutor, por clínica (el de mayor
+     * descuento si hay varios). Igual que Expedientes.ConveniosDelTutorAsync del portal.
+     */
+    suspend fun conveniosDelTutor(tutorId: Int): Map<Int, String> = db.leer { c ->
+        c.lista(
+            """select distinct on (cv.clinica_id) cv.clinica_id, cv.beneficio from convenios cv
+               where cv.plantel_id in (select a.plantel_id from alumnos a where a.tutor_id = ?)
+                 and cv.activo and (cv.vigente_hasta is null or cv.vigente_hasta >= current_date)
+               order by cv.clinica_id, cv.descuento desc""",
+            tutorId
+        ) { it.getInt(1) to it.getString(2) }.toMap()
+    }
+
     /** Asociadas primero; dentro de cada grupo, de la más cercana a la más lejana. */
     suspend fun cercanas(lat: Double, lng: Double, texto: String?): List<Pair<Clinica, Double>> =
         buscar(texto).filter { it.latitud != null && it.longitud != null }

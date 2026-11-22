@@ -28,6 +28,11 @@ data class Optica(
     /** Optica, Consultorio, Oftalmologia... */
     val tipo: String = "",
     val horario: String? = null,
+    /**
+     * Beneficio del convenio de la escuela del hijo con esta clínica (p. ej. "20 % en armazones").
+     * Solo llega si la petición trae la sesión de un tutor; null = sin convenio o sin sesión.
+     */
+    val convenio: String? = null,
 )
 
 /** Respuesta de GET /salud. */
@@ -60,4 +65,6 @@ data class ClinicaDto(
     val lng: Double? = null,
     /** Asociada al programa: con ella hay pase con QR. */
     val asociada: Boolean,
+    /** Igual que en Optica: beneficio del convenio para los hijos del tutor con sesión. */
+    val convenio: String? = null,
 )

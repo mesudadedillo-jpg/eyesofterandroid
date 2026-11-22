@@ -45,7 +45,11 @@ class Recordatorios(
                 val alumno = original.datos["alumno"] ?: "un alumno"
                 db.transaccion { c ->
                     val tutor = c.uno("select coalesce(email, user_name) from asp_net_users where id = ?", original.destinatario) { it.getString(1) } ?: "?"
-                    UsuarioRepository.idsConRol(c, RolesIdentity.ENFERMERIA).forEach {
+                    val plantel = original.datos["tamizajeId"]?.toIntOrNull()?.let { t ->
+                        c.uno("select a.plantel_id from tamizajes t join alumnos a on a.id = t.alumno_id where t.id = ?", t) { it.getInt(1) }
+                    }
+                    // Sin tamizaje no se sabe la escuela: avisa a quien administra el sistema.
+                    UsuarioRepository.idsAlertaEscuela(c, plantel).forEach {
                         NotificacionRepository.crearEn(c, it, TipoNotificacion.ALERTA_ENFERMERIA, "Aviso sin leer",
                             "El tutor $tutor no ha revisado el resultado del tamizaje de $alumno después de $diasPlazo días.",
                             buildMap {

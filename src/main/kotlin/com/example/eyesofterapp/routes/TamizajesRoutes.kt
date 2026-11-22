@@ -38,7 +38,7 @@ private val FECHA_MX = DateTimeFormatter.ofPattern("dd/MM/yyyy")
 /**
  *  GET  /api/tamizajes                 Tutor: los de sus hijos (con caso, pase y línea de tiempo,
  *                                      para guardarlos y verlos sin conexión, M-RFNN-01/03).
- *                                      Alumno: los suyos. Dirección/Enfermería: los 200 más recientes.
+ *                                      Alumno: los suyos. Dirección/Enfermería: los 200 más recientes DE SUS ESCUELAS.
  *  GET  /api/tamizajes/{id}            Detalle, a donde lleva la notificación (M-RC-02).
  *  POST /api/tamizajes/{id}/destino    El tutor elige la clínica: pase con QR o resumen (M-RFN-09..11).
  *  GET  /api/tamizajes/{id}/pase.png   El QR del pase vigente, para mostrarlo o guardarlo.
@@ -53,7 +53,7 @@ fun Route.tamizajesRoutes(servicios: Servicios) {
         if (!call.exigirConsentimiento(servicios, s)) return@get
         val ahora = servicios.reloj()
         val lista = when {
-            s.esPersonalEscolar -> ex.recientes().map { it.toDto() }
+            s.esPersonalEscolar -> ex.recientes(s.alcance).map { it.toDto() }
             s.esTutor -> ex.deTutor(s.tutorId!!).map { t -> t.toDto(t.casoId?.let { ex.detalle(t.id)?.caso }, portal, ahora) }
             s.alumnoId != null -> ex.deAlumno(s.alumnoId!!).map { it.toDto() }
             else -> emptyList()
@@ -64,7 +64,7 @@ fun Route.tamizajesRoutes(servicios: Servicios) {
     get("/api/tamizajes/{id}") {
         val (s, d) = call.detallePermitido(servicios) ?: return@get
         call.respond(d.tamizaje.toDto(d.caso, portal, servicios.reloj()))
-        if (s.esPersonalEscolar) servicios.auditoria.registrar(s.email, "VER_TAMIZAJE", "Tamizaje", d.tamizaje.id, ip = call.ip())
+        if (s.esPersonalEscolar) servicios.auditoria.registrar(s.email, "VER_TAMIZAJE", "Tamizaje", d.tamizaje.id, ip = call.ip(), plantelId = d.tamizaje.plantelId)
     }
 
     post("/api/tamizajes/{id}/destino") {
@@ -167,7 +167,8 @@ private suspend fun ApplicationCall.detallePermitido(servicios: Servicios, soloT
         error(HttpStatusCode.NotFound, "Tamizaje no encontrado")
         return null
     }
-    val permitido = if (soloTutorOPersonal) s.esPersonalEscolar || (s.esTutor && d.tamizaje.tutorId == s.tutorId) else s.puedeVer(d.tamizaje)
+    val permitido = if (soloTutorOPersonal) (s.esPersonalEscolar && s.permite(d.tamizaje.plantelId)) || (s.esTutor && d.tamizaje.tutorId == s.tutorId)
+                    else s.puedeVer(d.tamizaje)
     if (!permitido) {
         denegar(servicios, s, "Tamizaje", d.tamizaje.id, "Tamizaje no encontrado")
         return null

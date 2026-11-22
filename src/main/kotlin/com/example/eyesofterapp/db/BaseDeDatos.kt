@@ -98,6 +98,8 @@ private fun PreparedStatement.poner(i: Int, p: Any?) {
         is Int -> setInt(i, p)
         is Long -> setLong(i, p)
         is Double -> setDouble(i, p)
+        // Listas de escuelas: se usan como "plantel_id = any(?::int[])".
+        is IntArray -> setArray(i, connection.createArrayOf("integer", p.toTypedArray()))
         else -> setString(i, p.toString())
     }
 }

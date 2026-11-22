@@ -47,7 +47,7 @@ data class IncidenciaEscritorioDto(
     val equipo: String? = null,
 )
 
-/** GET /api/escritorio/alumnos: para que el escritorio valide la matrícula. */
+/** GET /api/escritorio/alumnos?q=: para que el escritorio valide la matrícula. */
 @Serializable
 data class AlumnoEscritorioDto(
     val matricula: String,
@@ -56,8 +56,42 @@ data class AlumnoEscritorioDto(
     val nivel: String,
     val grado: Int,
     val grupo: String,
-    val usaLentes: Boolean,
 )
+
+/** POST /api/escritorio/vinculaciones: el escritorio pide vincularse. */
+@Serializable
+data class VinculacionEntradaDto(val equipo: String = "")
+
+@Serializable
+data class VinculacionCreadaDto(
+    /** Secreto: solo lo conoce el escritorio y lo usa para preguntar si ya se aprobó. */
+    val solicitud: String,
+    /** Código que se muestra en el escritorio y en la página, p. ej. "K7QM-3RTA". */
+    val codigo: String,
+    /** Ruta de la página para aprobar, relativa a la URL del servidor. */
+    val ruta: String,
+    val expiraEnSegundos: Long,
+    val intervaloSegundos: Int = 3,
+)
+
+/** POST /api/escritorio/vinculaciones/estado */
+@Serializable
+data class VinculacionEstadoEntradaDto(val solicitud: String = "")
+
+@Serializable
+data class VinculacionEstadoDto(
+    /** PENDIENTE o APROBADA. */
+    val estado: String,
+    /** Solo cuando estado = APROBADA, y solo esa vez. */
+    val token: String? = null,
+    val usuario: String? = null,
+    val nombre: String? = null,
+    val equipo: String? = null,
+)
+
+/** GET /api/escritorio/equipo: ¿sigue vinculado este equipo? ¿quién lo autorizó? */
+@Serializable
+data class EquipoEscritorioDto(val equipo: String, val usuario: String, val nombre: String, val rol: String)
 
 /** Lo que ve el tutor (C-RFN-06: fecha, semáforo y observaciones, sin diagnóstico). */
 @Serializable
@@ -117,6 +151,8 @@ data class PaseDto(
     val clinicaTelefono: String,
     /** Lo que contiene el QR: la página del portal donde el especialista lo valida. */
     val urlValidacion: String,
+    /** Beneficio del convenio de la escuela con esa clínica (p. ej. "20 % en armazones"). null = sin convenio. */
+    val convenio: String? = null,
 )
 
 @Serializable

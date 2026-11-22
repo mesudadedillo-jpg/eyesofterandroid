@@ -23,12 +23,15 @@ fun Application.configureRouting(servicios: Servicios) {
         opticasRoutes(servicios)            // GET /opticas/cercanas, GET /api/clinicas
         rateLimit(LIMITE_ACCESO) {
             authRoutes(servicios)           // POST /api/login
+            vinculacionRoutes(servicios)    // POST /api/escritorio/vinculaciones (el escritorio pide código)
+            vinculacionFormularioRoutes(servicios) // POST /escritorio/vincular (navegador: login y aprobar)
             authenticate(AUTH_APP, optional = true) {
                 reportesRoutes(servicios)   // POST /api/reportes (con o sin sesión)
             }
         }
 
-        // --- Sistema de escritorio (clave X-Api-Key) ---
+        // --- Sistema de escritorio (equipo vinculado: Authorization: Bearer <token del equipo>) ---
+        vinculacionEstadoRoutes(servicios)  // POST /api/escritorio/vinculaciones/estado, GET /escritorio/vincular
         escritorioRoutes(servicios)         // /api/escritorio/...
 
         // --- App con sesión (Authorization: Bearer <token>) ---

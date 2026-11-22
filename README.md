@@ -18,6 +18,13 @@ escolar de tamizaje visual para la Escuela Primaria-Secundaria METANOIA (Tulanci
 | Portal web (dueño de la base y de las cuentas) | `https://github.com/mesudadedillo-jpg/eyesofterweb` |
 | Contrato de la API | [`docs/API.md`](docs/API.md) |
 
+## Varias escuelas
+
+Una sola base atiende a varias escuelas. El personal escolar (Dirección/Enfermería) solo ve lo de las
+escuelas que el portal le asignó (`usuario_planteles`); el **administrador global** ve todas. Lo de otra
+escuela responde 404, las alertas van a la Enfermería de la escuela del alumno y el escritorio trabaja con
+las escuelas de quien lo vinculó. Detalle en [`docs/API.md`](docs/API.md) → "Varias escuelas".
+
 ## Arquitectura
 
 ```
@@ -135,7 +142,7 @@ Necesita la base del portal. Lo más fácil: corre primero el portal en tu compu
 (crea la base y las cuentas demo, contraseña `Eyesofter123!`) y luego:
 
 ```bash
-DATABASE_URL="jdbc:postgresql://localhost:5432/eyesofter?user=postgres&password=postgres" ESCRITORIO_API_KEY=k123 URL_PORTAL=http://localhost:5080 ./gradlew run
+DATABASE_URL="jdbc:postgresql://localhost:5432/eyesofter?user=postgres&password=postgres" URL_PORTAL=http://localhost:5080 ./gradlew run
 ```
 
 En otra terminal:
@@ -144,7 +151,11 @@ En otra terminal:
 curl http://localhost:8080/salud
 curl -X POST http://localhost:8080/api/login -H "Content-Type: application/json" -d '{"username":"tutor@eyesofter.mx","password":"Eyesofter123!"}'
 curl "http://localhost:8080/opticas/cercanas?lat=20.0825&lng=-98.3622"
-curl -X POST http://localhost:8080/api/escritorio/tamizajes -H "X-Api-Key: k123" -H "Content-Type: application/json" -d '{"folio":"F1","matricula":"PRI2026003","fecha":"2026-11-19","semaforo":"AMARILLO","agudezaOjoDerecho":"20/40","agudezaOjoIzquierdo":"20/30"}'
+# Vincular un equipo de escritorio: pide código, abre la página en el navegador, inicia sesión con Enfermería
+curl -X POST http://localhost:8080/api/escritorio/vinculaciones -H "Content-Type: application/json" -d '{"equipo":"PC de prueba"}'
+#   → abre http://localhost:8080/escritorio/vincular?codigo=XXXX-XXXX y aprueba; luego:
+curl -X POST http://localhost:8080/api/escritorio/vinculaciones/estado -H "Content-Type: application/json" -d '{"solicitud":"<solicitud>"}'
+curl -X POST http://localhost:8080/api/escritorio/tamizajes -H "Authorization: Bearer <token del equipo>" -H "Content-Type: application/json" -d '{"folio":"F1","matricula":"PRI2026003","fecha":"2026-11-19","semaforo":"AMARILLO","agudezaOjoDerecho":"20/40","agudezaOjoIzquierdo":"20/30"}'
 curl http://localhost:8080/api/tamizajes -H "Authorization: Bearer <token del login>"
 ```
 
@@ -164,8 +175,10 @@ java -jar build/libs/eyesofter-backend.jar
 | `JWT_SECRET` | Secreto de las sesiones de la app. **Obligatoria en Railway** | En local genera uno temporal. **En Railway no arranca** |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Cuenta de administrador que se crea al arrancar si no existe. Sin el portal web es la única forma de tener la primera cuenta | No se crea ninguna (aviso en el log si la base no tiene cuentas) |
 | `CREAR_ESQUEMA` | `false` para NO crear las tablas del portal al arrancar. Por defecto se corre `esquema.sql`, que es idempotente y deja anotada la migración en `__EFMigrationsHistory`, así que el portal no choca después | Se crean si faltan |
-| `JWT_DIAS` | Duración de la sesión | `30` |
-| `ESCRITORIO_API_KEY` | Clave del sistema de escritorio (`X-Api-Key`) | Las rutas `/api/escritorio/…` responden 503 |
+| `JWT_DIAS` | Duración de la sesión de tutores y alumnos | `30` |
+| `JWT_HORAS_PERSONAL` | Duración de la sesión de Dirección y Enfermería en la app | `12` |
+| `EXIGIR_2FA_PERSONAL` | `false` para que la verificación en dos pasos del personal sea opcional (no recomendado) | Obligatoria |
+| `ESCRITORIO_DIAS` | Días que dura la vinculación de un equipo de escritorio. **Ya no hay `ESCRITORIO_API_KEY`**: cada equipo se vincula en el navegador con una cuenta de Dirección o Enfermería (ver docs/API.md §13). Si quedó definida en Railway, bórrala | `180` |
 | `URL_PORTAL` | URL pública del portal: va dentro del QR del pase y en los enlaces de privacidad | `http://localhost:5080` |
 | `VERSION_AVISO_PRIVACIDAD` | Igual que `Eyesofter__VersionAvisoPrivacidad` del portal | `2026-11` |
 | `DIAS_VIGENCIA_PASE` | Igual que `Eyesofter__DiasVigenciaPase` del portal | `60` |
@@ -210,14 +223,16 @@ curl https://eyesofterandroid-production.up.railway.app/salud
 3. **Este servidor** → *Variables*:
    - `DATABASE_URL` = `${{Postgres.DATABASE_URL}}` (referencia; usa la red privada de Railway)
    - `EYESOFTER_CLAVE_DATOS` = **la misma** que el portal
-   - `JWT_SECRET`, `ESCRITORIO_API_KEY` (generadas con `openssl rand -base64 32`)
+   - `JWT_SECRET` (generada con `openssl rand -base64 32`)
    - `URL_PORTAL` = la URL pública del portal
    - `FIREBASE_SERVICE_ACCOUNT` y, si habrá correo, `RESEND_API_KEY` y `CORREO_REMITENTE`
 4. **Firebase** (el mismo proyecto que la app): consola → ⚙ *Configuración del proyecto* →
    *Cuentas de servicio* → *Generar nueva clave privada*; pega el JSON completo en
    `FIREBASE_SERVICE_ACCOUNT`. Para iOS, sube la llave APNs en *Cloud Messaging*.
    **Nunca subas ese JSON al repositorio.**
-5. Revisa `GET /salud`: `db: true` y `push`/`correo`/`escritorio` en `true`.
+5. Revisa `GET /salud`: `db: true` y `push`/`correo` en `true`.
+6. En cada computadora de Enfermería: escritorio → *Configuración → Conexión con EYESOFTER Suite →
+   Vincular este equipo*, y aprobar en el navegador con la cuenta de Enfermería o Dirección.
 6. Ya **no** hace falta el volumen `/app/data`: todo vive en PostgreSQL. Si lo creaste antes, puedes quitarlo.
 
 ## Cómo se conecta con la app

@@ -32,6 +32,8 @@ fun Application.configureProteccion() {
             call.response.headers.append("X-Content-Type-Options", "nosniff")
             call.response.headers.append("Cache-Control", "no-store")
             call.response.headers.append("Referrer-Policy", "no-referrer")
+            // Railway sirve por HTTPS: el navegador nunca debe intentar HTTP con este servidor.
+            call.response.headers.append("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         }
     })
 }

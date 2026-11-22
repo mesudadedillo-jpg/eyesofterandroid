@@ -10,7 +10,6 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
-import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
@@ -38,7 +37,7 @@ class ExpedienteTest {
 
     private suspend fun HttpClient.recibir(folio: String = "ESC-1", matricula: String = "A001", semaforo: String = "ROJO") =
         post("/api/escritorio/tamizajes") {
-            header("X-Api-Key", API_KEY_PRUEBA); contentType(ContentType.Application.Json)
+            bearerAuth(servicios.tokenEscritorio()); contentType(ContentType.Application.Json)
             setBody(TamizajeEntradaDto(folio, matricula, hoy.toString(), semaforo, "20/60", "20/50", "Dolor de cabeza al leer"))
         }.body<TamizajeRecibidoDto>().tamizajeId
 

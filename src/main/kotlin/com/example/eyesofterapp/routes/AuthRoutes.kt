@@ -11,7 +11,9 @@ import com.example.eyesofterapp.model.UserDto
 import com.example.eyesofterapp.plugins.sesion
 import com.example.eyesofterapp.plugins.sesionOpcional
 import com.example.eyesofterapp.repos.RolesIdentity
+import com.example.eyesofterapp.repos.Usuario
 import com.example.eyesofterapp.seguridad.PasswordIdentity
+import com.example.eyesofterapp.seguridad.Totp
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -32,43 +34,10 @@ import java.time.Duration
 fun Route.authRoutes(servicios: Servicios) {
     post("/api/login") {
         val request = call.receive<LoginRequestDto>()
-        val login = request.username.trim()
-        if (login.isEmpty() || request.password.isEmpty()) {
-            call.error(HttpStatusCode.BadRequest, "Escribe tu correo y tu contraseña")
-            return@post
+        val u = when (val r = autenticar(servicios, request.username, request.password, call.ip(), request.codigo)) {
+            is Autenticacion.Fallida -> { call.error(r.codigo, r.mensaje, r.clave); return@post }
+            is Autenticacion.Correcta -> r.usuario
         }
-        val ahora = servicios.reloj()
-        val cred = servicios.usuarios.credenciales(login)
-        if (cred == null) {
-            // Se calcula un hash igual: la respuesta tarda lo mismo exista o no la cuenta.
-            PasswordIdentity.verificar(HASH_SEÑUELO, request.password)
-            servicios.auditoria.registrar(login.take(256), "LOGIN_FALLIDO", detalle = "Cuenta inexistente", ip = call.ip(), exito = false)
-            call.error(HttpStatusCode.Unauthorized, "Credenciales inválidas")
-            return@post
-        }
-        val u = cred.usuario
-        val bloqueo = cred.bloqueadaHasta?.takeIf { cred.bloqueoHabilitado && it.isAfter(ahora) }
-        if (bloqueo != null) {
-            val minutos = Duration.between(ahora, bloqueo).toMinutes() + 1
-            call.error(HttpStatusCode.TooManyRequests, "Cuenta bloqueada por intentos fallidos. Intenta de nuevo en $minutos min.")
-            return@post
-        }
-        if (!PasswordIdentity.verificar(cred.passwordHash, request.password)) {
-            val bloqueada = servicios.usuarios.registrarFallo(u.id, servicios.config.loginIntentosMax, servicios.config.loginBloqueoMin, ahora)
-            servicios.auditoria.registrar(u.email, if (bloqueada) "CUENTA_BLOQUEADA" else "LOGIN_FALLIDO", "Usuario", u.id, ip = call.ip(), exito = false)
-            if (bloqueada) call.error(HttpStatusCode.TooManyRequests, "Cuenta bloqueada por intentos fallidos. Intenta de nuevo en ${servicios.config.loginBloqueoMin} min.")
-            else call.error(HttpStatusCode.Unauthorized, "Credenciales inválidas")
-            return@post
-        }
-        if (!u.activo) {
-            call.error(HttpStatusCode.Forbidden, "Tu cuenta está desactivada. Comunícate con la escuela.")
-            return@post
-        }
-        if (u.rolApp == "DESCONOCIDO") {
-            call.error(HttpStatusCode.Forbidden, "Tu cuenta no tiene un rol asignado. Comunícate con la escuela.")
-            return@post
-        }
-        servicios.usuarios.registrarExito(u.id)
         servicios.auditoria.registrar(u.email, "LOGIN", "Usuario", u.id, ip = call.ip())
 
         val requiere = u.rol == RolesIdentity.TUTOR && servicios.consentimientos.aceptado(u.id, servicios.config.versionAviso) == null
@@ -79,6 +48,62 @@ fun Route.authRoutes(servicios: Servicios) {
             )
         )
     }
+}
+
+sealed interface Autenticacion {
+    data class Correcta(val usuario: Usuario) : Autenticacion
+    /** [clave]: para que la app reaccione sin leer el texto (REQUIERE_2FA, CODIGO_2FA_INVALIDO, ACTIVAR_2FA). */
+    data class Fallida(val codigo: HttpStatusCode, val mensaje: String, val clave: String? = null) : Autenticacion
+}
+
+/**
+ * Verifica correo y contraseña contra Identity con las MISMAS reglas que el portal:
+ * bloqueo tras 3 fallos (C-RFNN-01), cuenta desactivada, cuenta sin rol. Registra los
+ * fallos en la bitácora. Lo usan el login de la app y la vinculación de equipos de escritorio.
+ */
+suspend fun autenticar(servicios: Servicios, usuario: String, password: String, ip: String, codigo: String? = null): Autenticacion {
+    val login = usuario.trim()
+    if (login.isEmpty() || password.isEmpty()) return Autenticacion.Fallida(HttpStatusCode.BadRequest, "Escribe tu correo y tu contraseña")
+    val ahora = servicios.reloj()
+    val cred = servicios.usuarios.credenciales(login)
+    if (cred == null) {
+        // Se calcula un hash igual: la respuesta tarda lo mismo exista o no la cuenta.
+        PasswordIdentity.verificar(HASH_SEÑUELO, password)
+        servicios.auditoria.registrar(login.take(256), "LOGIN_FALLIDO", detalle = "Cuenta inexistente", ip = ip, exito = false)
+        return Autenticacion.Fallida(HttpStatusCode.Unauthorized, "Credenciales inválidas")
+    }
+    val u = cred.usuario
+    val bloqueo = cred.bloqueadaHasta?.takeIf { cred.bloqueoHabilitado && it.isAfter(ahora) }
+    if (bloqueo != null) {
+        val minutos = Duration.between(ahora, bloqueo).toMinutes() + 1
+        return Autenticacion.Fallida(HttpStatusCode.TooManyRequests, "Cuenta bloqueada por intentos fallidos. Intenta de nuevo en $minutos min.")
+    }
+    if (!PasswordIdentity.verificar(cred.passwordHash, password)) {
+        val bloqueada = servicios.usuarios.registrarFallo(u.id, servicios.config.loginIntentosMax, servicios.config.loginBloqueoMin, ahora)
+        servicios.auditoria.registrar(u.email, if (bloqueada) "CUENTA_BLOQUEADA" else "LOGIN_FALLIDO", "Usuario", u.id, ip = ip, exito = false)
+        return if (bloqueada) Autenticacion.Fallida(HttpStatusCode.TooManyRequests, "Cuenta bloqueada por intentos fallidos. Intenta de nuevo en ${servicios.config.loginBloqueoMin} min.")
+        else Autenticacion.Fallida(HttpStatusCode.Unauthorized, "Credenciales inválidas")
+    }
+    if (!u.activo) return Autenticacion.Fallida(HttpStatusCode.Forbidden, "Tu cuenta está desactivada. Comunícate con la escuela.")
+    if (u.rolApp == "DESCONOCIDO") return Autenticacion.Fallida(HttpStatusCode.Forbidden, "Tu cuenta no tiene un rol asignado. Comunícate con la escuela.")
+    // Verificación en dos pasos: con una contraseña robada no basta.
+    if (u.dosPasos) {
+        if (codigo.isNullOrBlank())
+            return Autenticacion.Fallida(HttpStatusCode.Unauthorized, "Escribe el código de 6 dígitos de tu app autenticadora.", "REQUIERE_2FA")
+        val clave = servicios.usuarios.claveAutenticador(u.id)
+        if (clave == null || !Totp.valido(clave, codigo, ahora)) {
+            // Un código equivocado cuenta como intento fallido (mismo bloqueo de 3 intentos).
+            val bloqueada = servicios.usuarios.registrarFallo(u.id, servicios.config.loginIntentosMax, servicios.config.loginBloqueoMin, ahora)
+            servicios.auditoria.registrar(u.email, if (bloqueada) "CUENTA_BLOQUEADA" else "LOGIN_2FA_FALLIDO", "Usuario", u.id, ip = ip, exito = false)
+            return if (bloqueada) Autenticacion.Fallida(HttpStatusCode.TooManyRequests, "Cuenta bloqueada por intentos fallidos. Intenta de nuevo en ${servicios.config.loginBloqueoMin} min.")
+            else Autenticacion.Fallida(HttpStatusCode.Unauthorized, "El código no es correcto o ya venció. Escribe el que aparece ahora en tu app.", "CODIGO_2FA_INVALIDO")
+        }
+    } else if (u.esPersonal && servicios.config.exigir2faPersonal) {
+        return Autenticacion.Fallida(HttpStatusCode.Forbidden,
+            "Por seguridad, activa primero la verificación en dos pasos en el portal web (menú de tu cuenta → Verificación en dos pasos).", "ACTIVAR_2FA")
+    }
+    servicios.usuarios.registrarExito(u.id)
+    return Autenticacion.Correcta(u)
 }
 
 /** Hash Identity de una contraseña al azar: solo para igualar tiempos de respuesta. */

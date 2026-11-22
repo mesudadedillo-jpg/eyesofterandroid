@@ -4,21 +4,37 @@ import com.example.eyesofterapp.Servicios
 import com.example.eyesofterapp.model.ClinicaDto
 import com.example.eyesofterapp.model.Optica
 import com.example.eyesofterapp.repos.Clinica
+import com.example.eyesofterapp.plugins.validarApp
+import com.example.eyesofterapp.repos.RolesIdentity
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 
-private fun Clinica.toOptica(distanciaKm: Double = 0.0) = Optica(
+private fun Clinica.toOptica(distanciaKm: Double = 0.0, convenio: String? = null) = Optica(
     id = id, nombre = nombre, direccion = direccion, ciudad = ciudad, codigoPostal = codigoPostal.orEmpty(),
     lat = latitud ?: 0.0, lng = longitud ?: 0.0, distanciaKm = Math.round(distanciaKm * 100) / 100.0,
-    telefono = telefono, verificada = asociada, tipo = tipo, horario = horario,
+    telefono = telefono, verificada = asociada, tipo = tipo, horario = horario, convenio = convenio,
 )
 
-private fun Clinica.toDto() = ClinicaDto(id, nombre, tipo, direccion, ciudad, codigoPostal, telefono, horario, latitud, longitud, asociada)
+private fun Clinica.toDto(convenio: String? = null) = ClinicaDto(id, nombre, tipo, direccion, ciudad, codigoPostal, telefono, horario, latitud, longitud, asociada, convenio)
+
+/**
+ * Convenios para quien consulta: si trae la sesión de un tutor, los de las escuelas de sus hijos.
+ * La ruta sigue siendo pública: un token ausente, vencido o de otro rol simplemente no agrega nada.
+ */
+private suspend fun ApplicationCall.conveniosDeLaSesion(servicios: Servicios): Map<Int, String> {
+    val token = request.headers[HttpHeaders.Authorization]?.takeIf { it.startsWith("Bearer ", ignoreCase = true) }?.substring(7)?.trim()
+    val usuario = servicios.tokens.validarApp(token, servicios.usuarios) ?: return emptyMap()
+    val tutorId = usuario.tutorId?.takeIf { usuario.rol == RolesIdentity.TUTOR } ?: return emptyMap()
+    return servicios.clinicas.conveniosDelTutor(tutorId)
+}
 
 /**
  * Directorio de clínicas (lo mantiene el portal; aquí solo se lee). Público: no tiene datos personales.
+ * Si llega la sesión de un tutor, cada clínica trae el beneficio del convenio con la escuela de sus hijos.
  *
  *  GET /opticas/cercanas?lat=&lng=[&query=]  Para el mapa: SOLO las que tienen coordenadas,
  *                                             asociadas primero y luego por distancia (M-RFN-07).
@@ -50,7 +66,8 @@ fun Route.opticasRoutes(servicios: Servicios) {
                 call.error(HttpStatusCode.BadRequest, "Coordenadas fuera de rango: lat debe estar entre -90 y 90, y lng entre -180 y 180")
                 return@get
             }
-            call.respond(servicios.clinicas.cercanas(lat, lng, query).map { (c, km) -> c.toOptica(km) })
+            val convenios = call.conveniosDeLaSesion(servicios)
+            call.respond(servicios.clinicas.cercanas(lat, lng, query).map { (c, km) -> c.toOptica(km, convenios[c.id]) })
             return@get
         }
         if (query != null) {
@@ -58,7 +75,8 @@ fun Route.opticasRoutes(servicios: Servicios) {
                 call.error(HttpStatusCode.BadRequest, "El parámetro query no puede estar vacío")
                 return@get
             }
-            call.respond(servicios.clinicas.buscar(query).filter { it.latitud != null && it.longitud != null }.map { it.toOptica() })
+            val convenios = call.conveniosDeLaSesion(servicios)
+            call.respond(servicios.clinicas.buscar(query).filter { it.latitud != null && it.longitud != null }.map { it.toOptica(convenio = convenios[it.id]) })
             return@get
         }
         call.error(HttpStatusCode.BadRequest, "Faltan parámetros: envía lat y lng, o query")
@@ -66,6 +84,7 @@ fun Route.opticasRoutes(servicios: Servicios) {
 
     get("/api/clinicas") {
         val query = call.request.queryParameters["query"]?.take(80)
-        call.respond(servicios.clinicas.buscar(query).map { it.toDto() })
+        val convenios = call.conveniosDeLaSesion(servicios)
+        call.respond(servicios.clinicas.buscar(query).map { it.toDto(convenios[it.id]) })
     }
 }

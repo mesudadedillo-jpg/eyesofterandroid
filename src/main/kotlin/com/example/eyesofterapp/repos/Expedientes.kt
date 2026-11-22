@@ -31,6 +31,8 @@ data class TamizajeFila(
     val tutorId: Int,
     val campana: String?,
     val casoId: Int?,
+    /** Escuela del alumno: el personal escolar solo ve tamizajes de sus escuelas (C-RE-01). */
+    val plantelId: Int = 1,
 )
 
 data class PaseFila(
@@ -41,6 +43,8 @@ data class PaseFila(
     val expiraEn: Instant,
     val estado: String,
     val usadoEn: Instant?,
+    /** Beneficio del convenio vigente entre la escuela del alumno y la clínica del pase. */
+    val convenio: String? = null,
 )
 
 data class CitaFila(val id: Int, val clinicaNombre: String?, val fechaPreferida: LocalDate, val horario: String?, val comentario: String?, val estado: String, val creadaEn: Instant)
@@ -77,6 +81,8 @@ data class TamizajeEntrante(
 sealed interface ResultadoIngesta {
     data class Duplicado(val tamizajeId: Int, val casoId: Int?) : ResultadoIngesta
     data class AlumnoDesconocido(val matricula: String) : ResultadoIngesta
+    /** La matrícula existe en más de una de las escuelas del equipo: no se sabe de cuál es. */
+    data class MatriculaAmbigua(val matricula: String) : ResultadoIngesta
     data class Registrado(val tamizajeId: Int, val casoId: Int?, val casoFolio: String?, val tutoresAvisados: Int) : ResultadoIngesta
 }
 
@@ -97,7 +103,7 @@ class ExpedienteRepository(private val db: BaseDeDatos, private val cifrado: Cif
 
     private val selectTamizaje = """
         select t.id, t.folio, t.fecha, t.semaforo, t.observaciones, t.alumno_id,
-               a.nombre || ' ' || a.apellidos as alumno, a.grado, a.grupo, a.tutor_id, cp.nombre as campana,
+               a.nombre || ' ' || a.apellidos as alumno, a.grado, a.grupo, a.tutor_id, a.plantel_id, cp.nombre as campana,
                (select cs.id from casos cs where cs.tamizaje_id = t.id order by cs.id desc limit 1) as caso_id
         from tamizajes t join alumnos a on a.id = t.alumno_id left join campanas cp on cp.id = t.campana_id
     """.trimIndent()
@@ -107,6 +113,7 @@ class ExpedienteRepository(private val db: BaseDeDatos, private val cifrado: Cif
         observaciones = cifrado.descifrar(rs.getString("observaciones")), alumnoId = rs.getInt("alumno_id"),
         alumnoNombre = rs.getString("alumno"), grado = rs.getInt("grado"), grupo = rs.getString("grupo"),
         tutorId = rs.getInt("tutor_id"), campana = rs.getString("campana"), casoId = rs.entero("caso_id"),
+        plantelId = rs.getInt("plantel_id"),
     )
 
     // ------------------------------------------------------------------ consultas
@@ -119,8 +126,10 @@ class ExpedienteRepository(private val db: BaseDeDatos, private val cifrado: Cif
         c.lista("$selectTamizaje where t.alumno_id = ? order by t.fecha desc, t.id desc", alumnoId, fila = ::tamizaje)
     }
 
-    suspend fun recientes(limite: Int = 200): List<TamizajeFila> = db.leer { c ->
-        c.lista("$selectTamizaje order by t.fecha desc, t.id desc limit ?", limite, fila = ::tamizaje)
+    /** Los más recientes de esas escuelas (null = todas, para el administrador global). */
+    suspend fun recientes(alcance: IntArray?, limite: Int = 200): List<TamizajeFila> = db.leer { c ->
+        c.lista("$selectTamizaje where (?::int[] is null or a.plantel_id = any(?::int[])) order by t.fecha desc, t.id desc limit ?",
+            alcance, alcance, limite, fila = ::tamizaje)
     }
 
     suspend fun tamizaje(id: Int): TamizajeFila? = db.leer { c -> tamizajeEn(c, id) }
@@ -144,7 +153,8 @@ class ExpedienteRepository(private val db: BaseDeDatos, private val cifrado: Cif
         )
     }?.let { caso ->
         caso.copy(
-            pase = c.uno("select * from pases where caso_id = ? order by creado_en desc, id desc limit 1", casoId) { pase(c, it) },
+            pase = c.uno("select * from pases where caso_id = ? order by creado_en desc, id desc limit 1", casoId) { pase(c, it) }
+                ?.let { p -> p.copy(convenio = convenioVigente(c, casoId, p.clinica.id)) },
             citas = c.lista(
                 """select ci.*, cl.nombre as clinica from citas ci left join clinicas cl on cl.id = ci.clinica_id
                    where ci.caso_id = ? order by ci.creada_en desc""", casoId
@@ -157,6 +167,13 @@ class ExpedienteRepository(private val db: BaseDeDatos, private val cifrado: Cif
             },
         )
     }
+
+    /** Beneficio del convenio vigente entre la escuela del alumno del caso y la clínica. Igual que Expedientes.ConvenioVigenteAsync del portal. */
+    private fun convenioVigente(c: Connection, casoId: Int, clinicaId: Int): String? = c.uno(
+        """select cv.beneficio from convenios cv join alumnos a on a.plantel_id = cv.plantel_id join casos cs on cs.alumno_id = a.id
+           where cs.id = ? and cv.clinica_id = ? and cv.activo and (cv.vigente_hasta is null or cv.vigente_hasta >= current_date)""",
+        casoId, clinicaId
+    ) { it.getString(1) }
 
     private fun pase(c: Connection, rs: ResultSet) = PaseFila(
         id = rs.getInt("id"), codigo = rs.getString("codigo"), clinica = ClinicaRepository.porId(c, rs.getInt("clinica_id"))!!,
@@ -172,17 +189,34 @@ class ExpedienteRepository(private val db: BaseDeDatos, private val cifrado: Cif
      *  - amarillo o rojo abre caso (o actualiza el caso activo: un alumno tiene un solo caso abierto);
      *  - deja la notificación al tutor y el evento en la línea de tiempo.
      */
-    suspend fun ingestar(e: TamizajeEntrante, ahora: Instant): ResultadoIngesta = db.transaccion { c ->
+    /**
+     * [alcance]: escuelas del equipo que envía (las de la cuenta que lo vinculó; null = todas).
+     * La matrícula es única por escuela, así que se busca solo en esas escuelas.
+     */
+    suspend fun ingestar(e: TamizajeEntrante, ahora: Instant, enviadoPor: String = "escritorio", alcance: IntArray? = null): ResultadoIngesta = db.transaccion { c ->
         // Dos envíos simultáneos del mismo folio: el segundo espera al primero y lo ve como duplicado.
         c.uno("select pg_advisory_xact_lock(hashtext(?))", "tamizaje:" + e.folio) { }
-        c.uno("select t.id, (select cs.id from casos cs where cs.tamizaje_id = t.id limit 1) as caso from tamizajes t where t.folio = ?", e.folio) {
-            ResultadoIngesta.Duplicado(it.getInt("id"), it.entero("caso"))
-        }?.let { return@transaccion it }
 
         data class Alumno(val id: Int, val nombre: String, val tutorId: Int, val plantelId: Int)
-        val alumno = c.uno("select id, nombre, apellidos, tutor_id, plantel_id from alumnos where upper(matricula) = upper(?)", e.matricula) {
+        val candidatos = c.lista(
+            "select id, nombre, apellidos, tutor_id, plantel_id from alumnos where upper(matricula) = upper(?) and (?::int[] is null or plantel_id = any(?::int[])) limit 2",
+            e.matricula, alcance, alcance
+        ) {
             Alumno(it.getInt("id"), it.getString("nombre") + " " + it.getString("apellidos"), it.getInt("tutor_id"), it.getInt("plantel_id"))
-        } ?: return@transaccion ResultadoIngesta.AlumnoDesconocido(e.matricula)
+        }
+        if (candidatos.size > 1) return@transaccion ResultadoIngesta.MatriculaAmbigua(e.matricula)
+        val alumno = candidatos.firstOrNull() ?: return@transaccion ResultadoIngesta.AlumnoDesconocido(e.matricula)
+
+        // Idempotencia SOLO dentro del mismo alumno: si otra escuela ya usó este folio (los folios del
+        // escritorio son aleatorios y pueden repetirse), no se descarta el tamizaje ni se devuelven ids
+        // ajenos: se guarda con el folio más la escuela (el índice de folios es único en todo el sistema).
+        val folioAlterno = "${e.folio}-E${alumno.plantelId}"
+        c.uno(
+            """select t.id, (select cs.id from casos cs where cs.tamizaje_id = t.id limit 1) as caso
+               from tamizajes t where t.folio in (?, ?) and t.alumno_id = ?""", e.folio, folioAlterno, alumno.id
+        ) { ResultadoIngesta.Duplicado(it.getInt("id"), it.entero("caso")) }?.let { return@transaccion it }
+        val folioOcupado = c.uno("select 1 from tamizajes where folio = ?", e.folio) { true } == true
+        val folio = if (folioOcupado) folioAlterno else e.folio
 
         val campanaId = c.uno(
             """select id from campanas where plantel_id = ? and fecha_inicio <= ? and (fecha_fin is null or fecha_fin >= ?)
@@ -192,7 +226,7 @@ class ExpedienteRepository(private val db: BaseDeDatos, private val cifrado: Cif
         val tamizajeId = c.uno(
             """insert into tamizajes (folio, alumno_id, campana_id, fecha, semaforo, agudeza_ojo_derecho, agudeza_ojo_izquierdo, observaciones, origen, recibido_en)
                values (?, ?, ?, ?, ?, ?, ?, ?, 'escritorio', ?) returning id""",
-            e.folio, alumno.id, campanaId, e.fecha, e.semaforo, cifrado.cifrar(e.agudezaOjoDerecho), cifrado.cifrar(e.agudezaOjoIzquierdo),
+            folio, alumno.id, campanaId, e.fecha, e.semaforo, cifrado.cifrar(e.agudezaOjoDerecho), cifrado.cifrar(e.agudezaOjoIzquierdo),
             cifrado.cifrar(e.observaciones), ahora
         ) { it.getInt(1) }!!
 
@@ -239,13 +273,13 @@ class ExpedienteRepository(private val db: BaseDeDatos, private val cifrado: Cif
                 "sistema", hoy(ahora))
         }
         if (tutores.isEmpty() && e.semaforo != "Verde") {
-            UsuarioRepository.idsConRol(c, RolesIdentity.ENFERMERIA).forEach {
+            UsuarioRepository.idsAlertaEscuela(c, alumno.plantelId).forEach {
                 NotificacionRepository.crearEn(c, it, TipoNotificacion.ALERTA_ENFERMERIA, "Tutor sin cuenta",
                     "${alumno.nombre} tiene un resultado que requiere seguimiento y su tutor no tiene cuenta. Avísale por teléfono.",
                     mapOf("ruta" to "seguimiento", "tamizajeId" to "$tamizajeId"), ahora)
             }
         }
-        Auditoria.registrarEn(c, "escritorio", "RECIBIR_TAMIZAJE", "Tamizaje", tamizajeId, e.folio, origen = "escritorio")
+        Auditoria.registrarEn(c, enviadoPor, "RECIBIR_TAMIZAJE", "Tamizaje", tamizajeId, e.folio, origen = "escritorio", plantelId = alumno.plantelId)
         ResultadoIngesta.Registrado(tamizajeId, casoId, casoFolio, tutores.size)
     }
 
@@ -293,7 +327,8 @@ class ExpedienteRepository(private val db: BaseDeDatos, private val cifrado: Cif
         ) { it.getInt(1) }!!
         evento(c, casoId, TipoEvento.CITA, "El tutor solicitó cita en ${clinica.nombre} para el $fecha (desde la app).", usuario, hoy(ahora))
         val datos = mapOf("ruta" to "seguimiento", "casoId" to "$casoId", "citaId" to "$id")
-        val destinatarios = UsuarioRepository.idsConRol(c, RolesIdentity.ENFERMERIA) +
+        val plantel = c.uno("select a.plantel_id from casos cs join alumnos a on a.id = cs.alumno_id where cs.id = ?", casoId) { it.getInt(1) }
+        val destinatarios = UsuarioRepository.idsAlertaEscuela(c, plantel) +
             c.lista("select id from asp_net_users where clinica_id = ? and activo", clinica.id) { it.getString(1) }
         destinatarios.distinct().forEach {
             NotificacionRepository.crearEn(c, it, TipoNotificacion.CITA, "Nueva solicitud de cita",
@@ -340,16 +375,21 @@ class ExpedienteRepository(private val db: BaseDeDatos, private val cifrado: Cif
 
     // ------------------------------------------------------------------ escritorio: consultas de apoyo
 
-    data class AlumnoEscritorio(val matricula: String, val nombre: String, val apellidos: String, val nivel: String, val grado: Int, val grupo: String, val usaLentes: Boolean)
+    data class AlumnoEscritorio(val matricula: String, val nombre: String, val apellidos: String, val nivel: String, val grado: Int, val grupo: String)
 
-    /** Para que el escritorio valide la matrícula antes de capturar el tamizaje. */
-    suspend fun alumnos(texto: String?): List<AlumnoEscritorio> = db.leer { c ->
-        val q = "%" + (texto?.trim() ?: "") + "%"
+    /**
+     * Para que el escritorio valide la matrícula antes de capturar el tamizaje. Es una
+     * BÚSQUEDA, no un listado: pide al menos 3 letras y devuelve pocos resultados, para
+     * que un equipo no pueda descargar el padrón completo de alumnos.
+     */
+    suspend fun alumnos(texto: String, alcance: IntArray?, limite: Int = 20): List<AlumnoEscritorio> = db.leer { c ->
+        val q = "%" + texto.trim().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         c.lista(
-            "select * from alumnos where matricula ilike ? or (nombre || ' ' || apellidos) ilike ? order by grado, grupo, apellidos limit 500", q, q
+            """select * from alumnos where (matricula ilike ? or (nombre || ' ' || apellidos) ilike ?)
+               and (?::int[] is null or plantel_id = any(?::int[])) order by grado, grupo, apellidos limit ?""", q, q, alcance, alcance, limite
         ) {
             AlumnoEscritorio(it.getString("matricula"), it.getString("nombre"), it.getString("apellidos"), it.getString("nivel"),
-                it.getInt("grado"), it.getString("grupo"), it.getBoolean("usa_lentes"))
+                it.getInt("grado"), it.getString("grupo"))
         }
     }
 
