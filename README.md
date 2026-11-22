@@ -13,7 +13,7 @@ escolar de tamizaje visual para la Escuela Primaria-Secundaria METANOIA (Tulanci
 | | |
 |---|---|
 | Repositorio | `https://github.com/mesudadedillo-jpg/eyesofterandroid` |
-| En producción | `https://eyesofterandroid-production.up.railway.app` (Railway) |
+| En producción | `https://eyesofter-api.up.railway.app` (Railway) |
 | App móvil | `https://github.com/mesudadedillo-jpg/eyesofterandroidfront` |
 | Portal web (dueño de la base y de las cuentas) | `https://github.com/mesudadedillo-jpg/eyesofterweb` |
 | Contrato de la API | [`docs/API.md`](docs/API.md) |
@@ -211,7 +211,7 @@ lo reinicie si se cae.
 producción hasta que se fusione. Para confirmar qué versión está corriendo:
 
 ```bash
-curl https://eyesofterandroid-production.up.railway.app/salud
+curl https://eyesofter-api.up.railway.app/salud
 ```
 
 `version` debe coincidir con los primeros 7 caracteres del último commit de `main`.
