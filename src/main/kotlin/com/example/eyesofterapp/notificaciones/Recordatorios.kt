@@ -49,7 +49,7 @@ class Recordatorios(
                         c.uno("select a.plantel_id from tamizajes t join alumnos a on a.id = t.alumno_id where t.id = ?", t) { it.getInt(1) }
                     }
                     // Sin tamizaje no se sabe la escuela: avisa a quien administra el sistema.
-                    (plantel?.let { UsuarioRepository.idsConRolEnPlantel(c, RolesIdentity.ENFERMERIA, it) } ?: UsuarioRepository.idsAdministracionSistema(c)).forEach {
+                    UsuarioRepository.idsAlertaEscuela(c, plantel).forEach {
                         NotificacionRepository.crearEn(c, it, TipoNotificacion.ALERTA_ENFERMERIA, "Aviso sin leer",
                             "El tutor $tutor no ha revisado el resultado del tamizaje de $alumno después de $diasPlazo días.",
                             buildMap {

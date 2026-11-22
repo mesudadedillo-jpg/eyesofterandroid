@@ -62,7 +62,7 @@ class ComprobanteRepository(private val db: BaseDeDatos, private val cifrado: Ci
         val nombre = if (tipo == "Receta") "la receta" else "el comprobante de lentes"
         ExpedienteRepository.evento(c, cifrado, casoId, TipoEvento.COMPROBANTE, "El tutor subió $nombre desde la app.", usuario, ExpedienteRepository.hoy(ahora))
         val plantel = c.uno("select a.plantel_id from casos cs join alumnos a on a.id = cs.alumno_id where cs.id = ?", casoId) { it.getInt(1) }
-        plantel?.let { UsuarioRepository.idsConRolEnPlantel(c, RolesIdentity.ENFERMERIA, it) }.orEmpty().forEach {
+        UsuarioRepository.idsAlertaEscuela(c, plantel).forEach {
             NotificacionRepository.crearEn(c, it, TipoNotificacion.COMPROBANTE_RECIBIDO, "Nuevo comprobante por revisar",
                 "El tutor de $alumno subió ${if (tipo == "Receta") "una receta" else "un comprobante de lentes"}.",
                 mapOf("ruta" to "comprobantes", "comprobanteId" to "$id", "casoId" to "$casoId"), ahora)

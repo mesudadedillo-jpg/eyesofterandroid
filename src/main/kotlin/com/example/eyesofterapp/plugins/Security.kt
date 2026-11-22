@@ -123,6 +123,9 @@ suspend fun Tokens.validarEscritorio(token: String?, usuarios: UsuarioRepository
     val jwt = runCatching { verificadorEscritorio.verify(token) }.getOrNull() ?: return null
     val usuario = jwt.subject?.let { usuarios.porId(it) } ?: return null
     if (!usuario.activo || !usuario.esPersonal || jwt.getClaim(CLAIM_SELLO).asString() != huellaSello(usuario.sello)) return null
+    // La misma regla que al vincular: si la cuenta pasó a ser global o se quedó sin escuelas, el equipo
+    // deja de funcionar (no se le amplía el alcance en silencio).
+    if (usuario.alcance == null || usuario.planteles.isEmpty()) return null
     return SesionEscritorio(usuario, jwt.getClaim(CLAIM_EQUIPO).asString().orEmpty())
 }
 

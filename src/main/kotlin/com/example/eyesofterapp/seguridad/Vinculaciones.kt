@@ -85,9 +85,11 @@ class Vinculaciones(
 
     /** false si mientras tanto venció o alguien más la aprobó. */
     suspend fun aprobar(solicitud: Solicitud, usuario: Usuario): Boolean = db.transaccion { c ->
+        val ahora = reloj()
+        // Si se aprueba casi al final de los 10 minutos, el escritorio tiene 2 minutos más para canjearla.
         c.ejecutar(
-            "update vinculaciones_escritorio set aprobada_por = ? where id = ? and aprobada_por is null and expira_en > ?",
-            usuario.id, solicitud.id, reloj()
+            "update vinculaciones_escritorio set aprobada_por = ?, expira_en = greatest(expira_en, ?) where id = ? and aprobada_por is null and expira_en > ?",
+            usuario.id, ahora.plusSeconds(120), solicitud.id, ahora
         ) == 1
     }
 

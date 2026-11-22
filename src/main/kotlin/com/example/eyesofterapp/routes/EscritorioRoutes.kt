@@ -104,7 +104,8 @@ fun Route.escritorioRoutes(servicios: Servicios) {
             // Solo la Enfermería de las escuelas del equipo.
             val ids = UsuarioRepository.idsConRolEnPlanteles(c, RolesIdentity.ENFERMERIA, equipo.usuario.alcance)
             ids.forEach { NotificacionRepository.crearEn(c, it, TipoNotificacion.ALERTA_ENFERMERIA, "Falla de sincronización", texto, mapOf("ruta" to "seguimiento"), ahora) }
-            com.example.eyesofterapp.repos.Auditoria.registrarEn(c, equipo.usuario.email, "FALLA_SINCRONIZACION", detalle = texto, ip = call.ip(), origen = "escritorio", exito = false)
+            com.example.eyesofterapp.repos.Auditoria.registrarEn(c, equipo.usuario.email, "FALLA_SINCRONIZACION", detalle = texto, ip = call.ip(), origen = "escritorio", exito = false,
+                plantelId = equipo.usuario.planteles.singleOrNull())
             ids.size
         }
         servicios.despachador.despertar()
@@ -120,7 +121,7 @@ fun Route.escritorioRoutes(servicios: Servicios) {
         }
         val lista = servicios.expedientes.alumnos(q.take(80), equipo.usuario.alcance)
         servicios.auditoria.registrar(equipo.usuario.email, "BUSCAR_ALUMNOS", detalle = "Equipo ${equipo.equipo}: \"${q.take(80)}\" (${lista.size} resultado(s))",
-            ip = call.ip(), origen = "escritorio")
+            ip = call.ip(), origen = "escritorio", plantelId = equipo.usuario.planteles.singleOrNull())
         call.respond(lista.map { AlumnoEscritorioDto(it.matricula, it.nombre, it.apellidos, it.nivel, it.grado, it.grupo) })
     }
 

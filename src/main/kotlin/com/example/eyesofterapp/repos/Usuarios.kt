@@ -164,6 +164,15 @@ class UsuarioRepository(private val db: BaseDeDatos) {
                 rol, plantelId
             ) { it.getString(1) }.distinct()
 
+        /**
+         * A quién avisar de algo urgente de un alumno de esa escuela: su Enfermería; si la escuela no
+         * tiene, su Dirección; si tampoco, la administración del sistema. Nunca se queda sin destinatario.
+         */
+        fun idsAlertaEscuela(c: Connection, plantelId: Int?): List<String> =
+            plantelId?.let { p ->
+                idsConRolEnPlantel(c, RolesIdentity.ENFERMERIA, p).ifEmpty { idsConRolEnPlantel(c, RolesIdentity.DIRECCION, p) }
+            }.orEmpty().ifEmpty { idsAdministracionSistema(c) }
+
         /** Personal activo con ese rol en alguna de esas escuelas (null = todas). */
         fun idsConRolEnPlanteles(c: Connection, rol: String, alcance: IntArray?): List<String> =
             if (alcance == null) idsConRol(c, rol) else c.lista(
@@ -174,8 +183,11 @@ class UsuarioRepository(private val db: BaseDeDatos) {
 
         /** Administradores globales; si aún no hay, toda Dirección (como antes). */
         fun idsAdministracionSistema(c: Connection): List<String> =
-            c.lista("select id from asp_net_users where administrador_global and activo") { it.getString(1) }
-                .ifEmpty { idsConRol(c, RolesIdentity.DIRECCION) }
+            // Igual que Usuario.alcance: solo cuenta como global una cuenta de Dirección con la marca.
+            c.lista(
+                """select u.id from asp_net_users u join asp_net_user_roles ur on ur.user_id = u.id join asp_net_roles r on r.id = ur.role_id
+                   where u.administrador_global and u.activo and r.name = ?""", RolesIdentity.DIRECCION
+            ) { it.getString(1) }.ifEmpty { idsConRol(c, RolesIdentity.DIRECCION) }
 
         fun cuentasDelTutor(c: Connection, tutorId: Int): List<String> =
             c.lista("select id from asp_net_users where tutor_id = ? and activo", tutorId) { it.getString(1) }

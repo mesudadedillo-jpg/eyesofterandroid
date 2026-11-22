@@ -142,7 +142,7 @@ fun Route.comprobantesRoutes(servicios: Servicios) {
             call.error(HttpStatusCode.NotFound, "El archivo ya no está disponible")
             return@get
         }
-        if (sesion.esPersonalEscolar) servicios.auditoria.registrar(sesion.email, "VER_COMPROBANTE", "Comprobante", c.id, ip = call.ip())
+        if (sesion.esPersonalEscolar) servicios.auditoria.registrar(sesion.email, "VER_COMPROBANTE", "Comprobante", c.id, ip = call.ip(), plantelId = c.plantelId)
         call.respondBytes(bytes, ContentType.parse(c.contentType))
     }
 

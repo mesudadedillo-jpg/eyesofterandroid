@@ -196,9 +196,6 @@ class ExpedienteRepository(private val db: BaseDeDatos, private val cifrado: Cif
     suspend fun ingestar(e: TamizajeEntrante, ahora: Instant, enviadoPor: String = "escritorio", alcance: IntArray? = null): ResultadoIngesta = db.transaccion { c ->
         // Dos envíos simultáneos del mismo folio: el segundo espera al primero y lo ve como duplicado.
         c.uno("select pg_advisory_xact_lock(hashtext(?))", "tamizaje:" + e.folio) { }
-        c.uno("select t.id, (select cs.id from casos cs where cs.tamizaje_id = t.id limit 1) as caso from tamizajes t where t.folio = ?", e.folio) {
-            ResultadoIngesta.Duplicado(it.getInt("id"), it.entero("caso"))
-        }?.let { return@transaccion it }
 
         data class Alumno(val id: Int, val nombre: String, val tutorId: Int, val plantelId: Int)
         val candidatos = c.lista(
@@ -210,6 +207,17 @@ class ExpedienteRepository(private val db: BaseDeDatos, private val cifrado: Cif
         if (candidatos.size > 1) return@transaccion ResultadoIngesta.MatriculaAmbigua(e.matricula)
         val alumno = candidatos.firstOrNull() ?: return@transaccion ResultadoIngesta.AlumnoDesconocido(e.matricula)
 
+        // Idempotencia SOLO dentro del mismo alumno: si otra escuela ya usó este folio (los folios del
+        // escritorio son aleatorios y pueden repetirse), no se descarta el tamizaje ni se devuelven ids
+        // ajenos: se guarda con el folio más la escuela (el índice de folios es único en todo el sistema).
+        val folioAlterno = "${e.folio}-E${alumno.plantelId}"
+        c.uno(
+            """select t.id, (select cs.id from casos cs where cs.tamizaje_id = t.id limit 1) as caso
+               from tamizajes t where t.folio in (?, ?) and t.alumno_id = ?""", e.folio, folioAlterno, alumno.id
+        ) { ResultadoIngesta.Duplicado(it.getInt("id"), it.entero("caso")) }?.let { return@transaccion it }
+        val folioOcupado = c.uno("select 1 from tamizajes where folio = ?", e.folio) { true } == true
+        val folio = if (folioOcupado) folioAlterno else e.folio
+
         val campanaId = c.uno(
             """select id from campanas where plantel_id = ? and fecha_inicio <= ? and (fecha_fin is null or fecha_fin >= ?)
                order by fecha_inicio desc limit 1""", alumno.plantelId, e.fecha, e.fecha
@@ -218,7 +226,7 @@ class ExpedienteRepository(private val db: BaseDeDatos, private val cifrado: Cif
         val tamizajeId = c.uno(
             """insert into tamizajes (folio, alumno_id, campana_id, fecha, semaforo, agudeza_ojo_derecho, agudeza_ojo_izquierdo, observaciones, origen, recibido_en)
                values (?, ?, ?, ?, ?, ?, ?, ?, 'escritorio', ?) returning id""",
-            e.folio, alumno.id, campanaId, e.fecha, e.semaforo, cifrado.cifrar(e.agudezaOjoDerecho), cifrado.cifrar(e.agudezaOjoIzquierdo),
+            folio, alumno.id, campanaId, e.fecha, e.semaforo, cifrado.cifrar(e.agudezaOjoDerecho), cifrado.cifrar(e.agudezaOjoIzquierdo),
             cifrado.cifrar(e.observaciones), ahora
         ) { it.getInt(1) }!!
 
@@ -265,7 +273,7 @@ class ExpedienteRepository(private val db: BaseDeDatos, private val cifrado: Cif
                 "sistema", hoy(ahora))
         }
         if (tutores.isEmpty() && e.semaforo != "Verde") {
-            UsuarioRepository.idsConRolEnPlantel(c, RolesIdentity.ENFERMERIA, alumno.plantelId).forEach {
+            UsuarioRepository.idsAlertaEscuela(c, alumno.plantelId).forEach {
                 NotificacionRepository.crearEn(c, it, TipoNotificacion.ALERTA_ENFERMERIA, "Tutor sin cuenta",
                     "${alumno.nombre} tiene un resultado que requiere seguimiento y su tutor no tiene cuenta. Avísale por teléfono.",
                     mapOf("ruta" to "seguimiento", "tamizajeId" to "$tamizajeId"), ahora)
@@ -320,7 +328,7 @@ class ExpedienteRepository(private val db: BaseDeDatos, private val cifrado: Cif
         evento(c, casoId, TipoEvento.CITA, "El tutor solicitó cita en ${clinica.nombre} para el $fecha (desde la app).", usuario, hoy(ahora))
         val datos = mapOf("ruta" to "seguimiento", "casoId" to "$casoId", "citaId" to "$id")
         val plantel = c.uno("select a.plantel_id from casos cs join alumnos a on a.id = cs.alumno_id where cs.id = ?", casoId) { it.getInt(1) }
-        val destinatarios = (plantel?.let { UsuarioRepository.idsConRolEnPlantel(c, RolesIdentity.ENFERMERIA, it) }.orEmpty()) +
+        val destinatarios = UsuarioRepository.idsAlertaEscuela(c, plantel) +
             c.lista("select id from asp_net_users where clinica_id = ? and activo", clinica.id) { it.getString(1) }
         destinatarios.distinct().forEach {
             NotificacionRepository.crearEn(c, it, TipoNotificacion.CITA, "Nueva solicitud de cita",

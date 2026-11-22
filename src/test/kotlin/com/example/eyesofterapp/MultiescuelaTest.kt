@@ -60,10 +60,13 @@ class MultiescuelaTest {
         // Misma matrícula A001, alumnos distintos: cada uno en su escuela.
         assertEquals(1, BasePrueba.cuenta("select alumno_id from tamizajes where folio = 'E1-001'"))
         assertEquals(4, BasePrueba.cuenta("select alumno_id from tamizajes where folio = 'E2-001'"))
-        // Un equipo vinculado por el administrador global no sabe a cuál se refiere: lo dice claro.
-        val global = client.enviar(servicios.tokenEscritorio("global@eyesofter.mx"), "G-001")
-        assertEquals(HttpStatusCode.Conflict, global.status)
-        assertTrue("MATRICULA_AMBIGUA" in global.bodyAsText())
+        // Un equipo de alguien con las dos escuelas no sabe a cuál A001 se refiere: lo dice claro.
+        BasePrueba.ejecutar("insert into usuario_planteles (usuario_id, plantel_id) values (?, 2)", BasePrueba.idDe("enfermeria@eyesofter.mx"))
+        val ambiguo = client.enviar(servicios.tokenEscritorio("enfermeria@eyesofter.mx"), "E12-001")
+        assertEquals(HttpStatusCode.Conflict, ambiguo.status)
+        assertTrue("MATRICULA_AMBIGUA" in ambiguo.bodyAsText())
+        // Y un equipo ligado al administrador global no funciona.
+        assertEquals(HttpStatusCode.Unauthorized, client.enviar(servicios.tokenEscritorio("global@eyesofter.mx"), "G-001").status)
         // La bitácora queda con la escuela de cada alumno.
         assertEquals(2, BasePrueba.cuenta("select plantel_id from auditoria where accion = 'RECIBIR_TAMIZAJE' and entidad_id = (select id::text from tamizajes where folio = 'E2-001')"))
     }
@@ -203,5 +206,50 @@ class MultiescuelaTest {
         assertEquals(HttpStatusCode.Forbidden, global.status)
         assertEquals(HttpStatusCode.Accepted,
             client.post("/api/escritorio/vinculaciones/estado") { contentType(ContentType.Application.Json); setBody(VinculacionEstadoEntradaDto(otra.solicitud)) }.status)
+    }
+
+    @Test
+    fun elMismoFolioEnDosEscuelasNoSePierde() = testApplication {
+        val client = servidor(servicios)
+        val r1 = client.enviar(servicios.tokenEscritorio("enfermeria@eyesofter.mx"), "ESC-2026-AAAA1111")
+        val r2 = client.enviar(servicios.tokenEscritorio("enfermeria2@eyesofter.mx"), "ESC-2026-AAAA1111")
+        assertEquals(HttpStatusCode.Created, r1.status)
+        assertEquals(HttpStatusCode.Created, r2.status)
+        val t1 = r1.body<TamizajeRecibidoDto>()
+        val t2 = r2.body<TamizajeRecibidoDto>()
+        assertTrue(t1.tamizajeId != t2.tamizajeId && t1.casoId != t2.casoId)
+        // Reenviar desde la escuela 2 es duplicado DE SU tamizaje, nunca el de la otra escuela.
+        val otraVez = client.enviar(servicios.tokenEscritorio("enfermeria2@eyesofter.mx"), "ESC-2026-AAAA1111").body<TamizajeRecibidoDto>()
+        assertTrue(otraVez.duplicado)
+        assertEquals(t2.tamizajeId, otraVez.tamizajeId)
+        assertEquals(2, BasePrueba.cuenta("select count(*) from tamizajes"))
+    }
+
+    @Test
+    fun elSeguimientoSeFiltraPorLaEscuelaDelAlumnoNoDelTutor() = testApplication {
+        val client = servidor(servicios)
+        // Rosa (tutor 3) también tiene una hija en la escuela 1.
+        BasePrueba.ejecutar("update alumnos set tutor_id = 3 where id = 3")
+        client.enviar(servicios.tokenEscritorio("enfermeria@eyesofter.mx"), "E1-SOFIA", matricula = "A003")
+        val enf2 = client.tokenDe("enfermeria2@eyesofter.mx")
+        assertEquals(0, client.get("/api/notificaciones/seguimiento") { bearerAuth(enf2) }.body<List<SeguimientoDto>>().size)
+    }
+
+    @Test
+    fun siLaEscuelaNoTieneEnfermeriaLaAlertaLlegaASuDireccion() = testApplication {
+        val client = servidor(servicios)
+        BasePrueba.ejecutar("delete from usuario_planteles where usuario_id = ?", BasePrueba.idDe("enfermeria@eyesofter.mx"))
+        BasePrueba.ejecutar("update asp_net_users set tutor_id = null where tutor_id = 2")
+        client.enviar(servicios.tokenEscritorio("direccion@eyesofter.mx"), "E1-LUIS", matricula = "A002")
+        assertEquals(1, BasePrueba.cuenta("select count(*) from notificaciones where tipo = 'ALERTA_ENFERMERIA' and usuario_id = ?", BasePrueba.idDe("direccion@eyesofter.mx")))
+    }
+
+    @Test
+    fun siLaCuentaQueVinculoPasaASerGlobalElEquipoDejaDeFuncionar() = testApplication {
+        val client = servidor(servicios)
+        val equipo = servicios.tokenEscritorio("direccion@eyesofter.mx")
+        assertEquals(HttpStatusCode.OK, client.get("/api/escritorio/equipo") { bearerAuth(equipo) }.status)
+        BasePrueba.ejecutar("update asp_net_users set administrador_global = true where email = 'direccion@eyesofter.mx'")
+        assertEquals(HttpStatusCode.Unauthorized, client.get("/api/escritorio/equipo") { bearerAuth(equipo) }.status)
     }
 }

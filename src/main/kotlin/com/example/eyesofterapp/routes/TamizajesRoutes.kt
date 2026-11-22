@@ -64,7 +64,7 @@ fun Route.tamizajesRoutes(servicios: Servicios) {
     get("/api/tamizajes/{id}") {
         val (s, d) = call.detallePermitido(servicios) ?: return@get
         call.respond(d.tamizaje.toDto(d.caso, portal, servicios.reloj()))
-        if (s.esPersonalEscolar) servicios.auditoria.registrar(s.email, "VER_TAMIZAJE", "Tamizaje", d.tamizaje.id, ip = call.ip())
+        if (s.esPersonalEscolar) servicios.auditoria.registrar(s.email, "VER_TAMIZAJE", "Tamizaje", d.tamizaje.id, ip = call.ip(), plantelId = d.tamizaje.plantelId)
     }
 
     post("/api/tamizajes/{id}/destino") {
