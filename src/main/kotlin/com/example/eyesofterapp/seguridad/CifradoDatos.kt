@@ -3,6 +3,7 @@ package com.example.eyesofterapp.seguridad
 import java.security.SecureRandom
 import java.util.Base64
 import javax.crypto.Cipher
+import javax.crypto.Mac
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
@@ -35,6 +36,15 @@ class CifradoDatos(claveBase64: String) {
     fun descifrarArchivo(valor: ByteArray): ByteArray =
         if (valor.size >= 2 && valor[0] == PREFIJO_BYTES[0] && valor[1] == PREFIJO_BYTES[1]) descifrarBytes(valor.copyOfRange(2, valor.size))
         else valor
+
+    /**
+     * Huella HMAC-SHA256 (hex en minúsculas) de "proposito\ntexto" con la llave de datos.
+     * La MISMA que CifradoDatos.Firma del portal: así los dos comparan los códigos de recuperación.
+     */
+    fun firma(proposito: String, texto: String): String {
+        val mac = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(clave, "HmacSHA256")) }
+        return mac.doFinal("$proposito\n$texto".toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+    }
 
     private fun cifrarBytes(datos: ByteArray): ByteArray {
         val nonce = ByteArray(12).also { azar.nextBytes(it) }

@@ -184,7 +184,9 @@ java -jar build/libs/eyesofter-backend.jar
 | `DIAS_VIGENCIA_PASE` | Igual que `Eyesofter__DiasVigenciaPase` del portal | `60` |
 | `FIREBASE_SERVICE_ACCOUNT` | **Contenido** del JSON de la cuenta de servicio de Firebase | Sin push (aviso al arrancar) |
 | `FIREBASE_SERVICE_ACCOUNT_FILE` | Alternativa: ruta a ese JSON | — |
-| `RESEND_API_KEY` / `CORREO_REMITENTE` | Correo de respaldo con [Resend](https://resend.com); remitente de un dominio verificado | Sin correo |
+| `RESEND_API_KEY` / `CORREO_REMITENTE` | Correo de respaldo y código de recuperación de contraseña con [Resend](https://resend.com); remitente de un dominio verificado | Sin correo |
+| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_NUMERO` | (Opcional) SMS con el código de recuperación de contraseña vía [Twilio](https://www.twilio.com). **No es gratis**: la cuenta de prueba da crédito pero solo envía a números verificados; para todos los tutores hay que cargar saldo (≈ US$0.05 por SMS a México). Sin estas variables el código va por correo. Deben ser las mismas en el portal | Sin SMS |
+| `SMS_PREFIJO_PAIS` | Lada que se antepone a un celular de 10 dígitos | `+52` |
 | `DESPACHO_SEGUNDOS` | Cada cuántos segundos se entrega la bandeja de salida | `3` |
 | `RECORDATORIO_DIAS` / `RECORDATORIO_MAX` / `RECORDATORIO_REVISION_MIN` | Avisos sin leer: días, máximo de reenvíos, cada cuántos minutos se revisa | `3` / `3` / `60` |
 | `LOGIN_INTENTOS_MAX` / `LOGIN_BLOQUEO_MIN` | Bloqueo de cuenta (deben coincidir con el portal) | `3` / `15` |

@@ -78,3 +78,20 @@ data class ReporteEntradaDto(
 
 @Serializable
 data class ReporteRecibidoDto(val id: Int)
+
+/** POST /api/recuperar/solicitar: "cuenta" es el correo o el celular de 10 dígitos. */
+@Serializable
+data class SolicitarCodigoDto(val cuenta: String)
+
+/** Respuesta de /api/recuperar/solicitar: la misma exista o no la cuenta. */
+@Serializable
+data class CodigoSolicitadoDto(
+    val mensaje: String,
+    /** "sms" o "correo": dónde buscar el código. */
+    val canal: String,
+    val minutosVigencia: Int,
+)
+
+/** POST /api/recuperar/restablecer. */
+@Serializable
+data class RestablecerPasswordDto(val cuenta: String, val codigo: String, val password: String)

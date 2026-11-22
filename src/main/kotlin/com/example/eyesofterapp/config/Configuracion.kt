@@ -40,6 +40,13 @@ data class Configuracion(
     val resendApiKey: String?,
     /** Remitente del correo, p. ej. "EYESOFTER <avisos@tudominio.com>". */
     val correoRemitente: String?,
+    /** SMS opcional (Twilio) para el código de recuperación. null = el código solo va por correo. */
+    val twilioSid: String? = null,
+    val twilioToken: String? = null,
+    /** Número remitente de Twilio, p. ej. "+15017122661". */
+    val twilioNumero: String? = null,
+    /** Lada que se antepone a un celular de 10 dígitos. */
+    val smsPrefijoPais: String = "+52",
     /** URL pública del portal web: va en el QR del pase y en los enlaces de privacidad. */
     val urlPortal: String = "http://localhost:5080",
     /** Versión vigente del aviso de privacidad; la misma que Eyesofter:VersionAvisoPrivacidad del portal. */
@@ -97,6 +104,10 @@ data class Configuracion(
                 firebaseServiceAccountJson = firebase,
                 resendApiKey = texto("RESEND_API_KEY"),
                 correoRemitente = texto("CORREO_REMITENTE"),
+                twilioSid = texto("TWILIO_ACCOUNT_SID"),
+                twilioToken = texto("TWILIO_AUTH_TOKEN"),
+                twilioNumero = texto("TWILIO_NUMERO"),
+                smsPrefijoPais = texto("SMS_PREFIJO_PAIS") ?: "+52",
                 urlPortal = texto("URL_PORTAL") ?: "http://localhost:5080",
                 versionAviso = texto("VERSION_AVISO_PRIVACIDAD") ?: "2026-11",
                 diasVigenciaPase = texto("DIAS_VIGENCIA_PASE")?.toLongOrNull() ?: 60,

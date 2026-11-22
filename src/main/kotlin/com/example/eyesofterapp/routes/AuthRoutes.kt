@@ -2,17 +2,21 @@ package com.example.eyesofterapp.routes
 
 import com.example.eyesofterapp.Servicios
 import com.example.eyesofterapp.model.AceptarConsentimientoDto
+import com.example.eyesofterapp.model.CodigoSolicitadoDto
 import com.example.eyesofterapp.model.ConsentimientoDto
 import com.example.eyesofterapp.model.LoginRequestDto
 import com.example.eyesofterapp.model.LoginResponseDto
 import com.example.eyesofterapp.model.ReporteEntradaDto
 import com.example.eyesofterapp.model.ReporteRecibidoDto
+import com.example.eyesofterapp.model.RestablecerPasswordDto
+import com.example.eyesofterapp.model.SolicitarCodigoDto
 import com.example.eyesofterapp.model.UserDto
 import com.example.eyesofterapp.plugins.sesion
 import com.example.eyesofterapp.plugins.sesionOpcional
 import com.example.eyesofterapp.repos.RolesIdentity
 import com.example.eyesofterapp.repos.Usuario
 import com.example.eyesofterapp.seguridad.PasswordIdentity
+import com.example.eyesofterapp.seguridad.RecuperacionPassword
 import com.example.eyesofterapp.seguridad.Totp
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
@@ -163,5 +167,49 @@ fun Route.reportesRoutes(servicios: Servicios) {
         val id = servicios.consentimientos.reportar(s?.id, correo, tipo!!, mensaje, plataforma.lowercase(), servicios.reloj())
         servicios.despachador.despertar()
         call.respond(HttpStatusCode.Created, ReporteRecibidoDto(id))
+    }
+}
+
+/**
+ * "¿Olvidaste tu contraseña?" desde la app (C-RFNN-02). Mismas reglas y tabla que el portal:
+ * un código pedido aquí también sirve en la web.
+ *  POST /api/recuperar/solicitar   {"cuenta": "correo o celular"} → 202 (igual exista o no la cuenta)
+ *  POST /api/recuperar/restablecer {"cuenta", "codigo", "password"} → 204, o 400 con
+ *       codigo = CODIGO_INCORRECTO | CODIGO_VENCIDO | PASSWORD_INVALIDA
+ */
+fun Route.recuperacionRoutes(servicios: Servicios) {
+    post("/api/recuperar/solicitar") {
+        val cuenta = call.receive<SolicitarCodigoDto>().cuenta.trim()
+        if ('@' !in cuenta && !RecuperacionPassword.esTelefono(cuenta)) {
+            call.error(HttpStatusCode.BadRequest, "Escribe tu correo o tu celular de 10 dígitos.")
+            return@post
+        }
+        servicios.recuperacion.solicitar(cuenta, call.ip())
+        val porSms = RecuperacionPassword.esTelefono(cuenta) && servicios.recuperacion.smsDisponible
+        val donde = when {
+            porSms -> "por SMS a tu celular"
+            RecuperacionPassword.esTelefono(cuenta) -> "al correo registrado en tu cuenta"
+            else -> "a tu correo"
+        }
+        call.respond(
+            HttpStatusCode.Accepted,
+            CodigoSolicitadoDto(
+                mensaje = "Si los datos corresponden a una cuenta, te enviamos un código de 6 dígitos $donde. " +
+                    "Vence en ${RecuperacionPassword.MINUTOS_VIGENCIA} minutos.",
+                canal = if (porSms) "sms" else "correo",
+                minutosVigencia = RecuperacionPassword.MINUTOS_VIGENCIA.toInt(),
+            )
+        )
+    }
+
+    post("/api/recuperar/restablecer") {
+        val e = call.receive<RestablecerPasswordDto>()
+        if (e.cuenta.isBlank() || e.codigo.isBlank() || e.password.isEmpty()) {
+            call.error(HttpStatusCode.BadRequest, "Escribe tu correo o celular, el código y la contraseña nueva.")
+            return@post
+        }
+        val r = servicios.recuperacion.restablecer(e.cuenta, e.codigo, e.password, call.ip())
+        if (r.exito) call.respond(HttpStatusCode.NoContent)
+        else call.error(HttpStatusCode.BadRequest, r.mensaje ?: "No se pudo cambiar la contraseña.", r.clave)
     }
 }
