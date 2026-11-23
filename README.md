@@ -6,7 +6,7 @@ escolar de tamizaje visual para la Escuela Primaria-Secundaria METANOIA (Tulanci
 - Inicio de sesión de la app con **las mismas cuentas del portal web**.
 - Recibe los tamizajes del sistema de escritorio y abre los casos.
 - Expediente para el tutor: resultado, destino, **pase médico con QR**, citas y comprobantes.
-- **Entrega las notificaciones** (push con Firebase y correo con Resend) de todo el sistema,
+- **Entrega las notificaciones** (push con Firebase y correo con Brevo o Resend) de todo el sistema,
   también las que crea el portal.
 - Directorio de clínicas para el mapa.
 
@@ -46,7 +46,7 @@ las escuelas de quien lo vinculó. Detalle en [`docs/API.md`](docs/API.md) → "
 
 ## Tecnologías
 
-Kotlin 2.4.20 · Ktor 3.6.0 (Netty, JWT, límite por IP, cliente CIO) · PostgreSQL (JDBC + HikariCP, sin ORM, consultas parametrizadas) · ZXing (QR) · Firebase Cloud Messaging (API HTTP v1) · Resend (correo) · Gradle 9.5.1 · Java 21 · Docker
+Kotlin 2.4.20 · Ktor 3.6.0 (Netty, JWT, límite por IP, cliente CIO) · PostgreSQL (JDBC + HikariCP, sin ORM, consultas parametrizadas) · ZXing (QR) · Firebase Cloud Messaging (API HTTP v1) · Brevo o Resend (correo) · Gradle 9.5.1 · Java 21 · Docker
 
 ## Estructura de carpetas
 
@@ -87,7 +87,7 @@ eyesofter-backend/
     │   ├── notificaciones/
     │   │   ├── Despachador.kt     Entrega la bandeja de salida: push → correo
     │   │   ├── Recordatorios.kt   Avisos sin leer (3 días) y casos sin atender
-    │   │   ├── CanalPushFcm.kt, CanalCorreoResend.kt, CanalNotificacion.kt
+    │   │   ├── CanalPushFcm.kt, Correo.kt (Brevo/Resend y CanalCorreo), CanalNotificacion.kt
     │   ├── routes/             Qué hace cada URL (ver docs/API.md)
     │   └── model/              Forma del JSON que viaja (copia del contrato)
     ├── main/resources/
@@ -184,7 +184,8 @@ java -jar build/libs/eyesofter-backend.jar
 | `DIAS_VIGENCIA_PASE` | Igual que `Eyesofter__DiasVigenciaPase` del portal | `60` |
 | `FIREBASE_SERVICE_ACCOUNT` | **Contenido** del JSON de la cuenta de servicio de Firebase | Sin push (aviso al arrancar) |
 | `FIREBASE_SERVICE_ACCOUNT_FILE` | Alternativa: ruta a ese JSON | — |
-| `RESEND_API_KEY` / `CORREO_REMITENTE` | Correo de respaldo y código de recuperación de contraseña con [Resend](https://resend.com); remitente de un dominio verificado | Sin correo |
+| `BREVO_API_KEY` / `CORREO_REMITENTE` | Correo de respaldo y código de recuperación con [Brevo](https://www.brevo.com) (gratis, 300 al día). **No necesita dominio propio**: el remitente (p. ej. `EYESOFTER <eyesofter.avisos@gmail.com>`) se verifica en Brevo → *Senders*. Deben ser las mismas en el portal | Sin correo |
+| `RESEND_API_KEY` | Alternativa a Brevo con [Resend](https://resend.com); el remitente debe ser de un dominio verificado. Si están las dos llaves, se usa Brevo | — |
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_NUMERO` | (Opcional) SMS con el código de recuperación de contraseña vía [Twilio](https://www.twilio.com). **No es gratis**: la cuenta de prueba da crédito pero solo envía a números verificados; para todos los tutores hay que cargar saldo (≈ US$0.05 por SMS a México). Sin estas variables el código va por correo. Deben ser las mismas en el portal | Sin SMS |
 | `SMS_PREFIJO_PAIS` | Lada que se antepone a un celular de 10 dígitos | `+52` |
 | `DESPACHO_SEGUNDOS` | Cada cuántos segundos se entrega la bandeja de salida | `3` |
@@ -227,7 +228,7 @@ curl https://eyesofter-api.up.railway.app/salud
    - `EYESOFTER_CLAVE_DATOS` = **la misma** que el portal
    - `JWT_SECRET` (generada con `openssl rand -base64 32`)
    - `URL_PORTAL` = la URL pública del portal
-   - `FIREBASE_SERVICE_ACCOUNT` y, si habrá correo, `RESEND_API_KEY` y `CORREO_REMITENTE`
+   - `FIREBASE_SERVICE_ACCOUNT` y, si habrá correo, `BREVO_API_KEY` (o `RESEND_API_KEY`) y `CORREO_REMITENTE`
 4. **Firebase** (el mismo proyecto que la app): consola → ⚙ *Configuración del proyecto* →
    *Cuentas de servicio* → *Generar nueva clave privada*; pega el JSON completo en
    `FIREBASE_SERVICE_ACCOUNT`. Para iOS, sube la llave APNs en *Cloud Messaging*.
@@ -254,7 +255,7 @@ un campo en `model/`, cámbialo también en la app y en las dos copias de `API.m
 ## Pendientes conocidos
 
 - **Firebase**: falta crear el proyecto y cargar `FIREBASE_SERVICE_ACCOUNT`; mientras tanto los avisos
-  quedan en la bandeja (la app los muestra al abrirla) y, si hay Resend, llegan por correo.
+  quedan en la bandeja (la app los muestra al abrirla) y, si hay Brevo o Resend, llegan por correo.
 - El sistema de escritorio debe adoptar el contrato de `docs/API.md` §13 (matrícula en lugar de
   `tutorUsername`, cola de reintentos e incidencias).
 - CORS permite cualquier dominio: la API usa tokens Bearer (no cookies), así que una página ajena

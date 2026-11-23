@@ -27,7 +27,7 @@
 - **La misma llave de cifrado** (`EYESOFTER_CLAVE_DATOS`, AES-256-GCM) para los datos sensibles (C-RC-04).
 - **La misma bandeja de notificaciones.** Lo que crea el portal o el servidor queda en la tabla
   `notificaciones` con `pendiente_envio = true`; el servidor Ktor la entrega por push o correo en
-  segundos (bandeja de salida). Así solo Ktor habla con Firebase y Resend.
+  segundos (bandeja de salida). Así solo Ktor habla con Firebase y el proveedor de correo (Brevo o Resend).
 - Los cambios de estado se ven en el otro lado **al instante** (misma base; C-RC-02 pide < 5 s).
 
 ## Dónde vive cada lado del contrato
@@ -119,7 +119,7 @@ pases, citas, comprobantes, avisos) pertenece a la **escuela del alumno** (`alum
 - `db`: la base respondió en menos de 2 s. Si no, `status` es `"degradado"` (sigue siendo **200**
   para que Railway no reinicie el servicio en bucle mientras la base arranca).
 - `version`: commit desplegado en Railway (`dev` en local).
-- `push` / `correo`: si están configurados Firebase y Resend. `escritorio`: siempre `true` (la vinculación de equipos ya no depende de una clave).
+- `push` / `correo`: si están configurados Firebase y el correo (Brevo o Resend). `escritorio`: siempre `true` (la vinculación de equipos ya no depende de una clave).
 - `pendientesEnvio`: notificaciones esperando entrega. Si crece y no baja, algo falla con push/correo.
 - Railway la usa como *healthcheck* (`railway.json`).
 
@@ -171,7 +171,7 @@ código sirve en los dos. **Es obligatoria para Dirección y Enfermería**; opci
 
 ### 3.1 "¿Olvidaste tu contraseña?" — sin sesión (C-RFNN-02)
 
-Código de 6 dígitos al **correo** (Resend, gratis) o, si el servidor tiene Twilio configurado, por **SMS**
+Código de 6 dígitos al **correo** (Brevo o Resend, gratis) o, si el servidor tiene Twilio configurado, por **SMS**
 al celular. Las reglas y la tabla (`codigos_recuperacion`) son las MISMAS del portal: un código pedido
 en la app sirve en `{URL_PORTAL}/Cuenta/IngresarCodigo` y al revés.
 
@@ -302,7 +302,7 @@ La app navega a `datos.ruta` al tocarla (M-RC-02) y la marca como leída.
 
 1. Quien la crea (escritorio, portal o la propia API) la guarda en la bandeja con `pendiente_envio = true`.
 2. El **despachador** de Ktor revisa la bandeja cada `DESPACHO_SEGUNDOS` (3 s) y la entrega en orden:
-   **push** (FCM HTTP v1, Android e iOS) → si no llega (sin permiso, sin app, token vencido) **correo** (Resend).
+   **push** (FCM HTTP v1, Android e iOS) → si no llega (sin permiso, sin app, token vencido) **correo** (Brevo o Resend).
 3. Cada intento queda en `entregas_notificacion` (el portal y `/seguimiento` muestran por dónde llegó).
 4. Si no hay canales configurados, la notificación queda solo en la bandeja: la app la muestra al iniciar sesión.
 
