@@ -36,8 +36,10 @@ data class Configuracion(
     val escritorioDias: Long = 180,
     /** Contenido JSON de la cuenta de servicio de Firebase. null = push desactivada. */
     val firebaseServiceAccountJson: String?,
-    /** API key de Resend para el correo de respaldo. null = correo desactivado. */
+    /** API key de Resend (necesita dominio verificado). Si también hay [brevoApiKey], gana Brevo. */
     val resendApiKey: String?,
+    /** API key de Brevo (no necesita dominio propio). Sin Brevo ni Resend no hay correo. */
+    val brevoApiKey: String? = null,
     /** Remitente del correo, p. ej. "EYESOFTER <avisos@tudominio.com>". */
     val correoRemitente: String?,
     /** SMS opcional (Twilio) para el código de recuperación. null = el código solo va por correo. */
@@ -103,6 +105,7 @@ data class Configuracion(
                 escritorioDias = texto("ESCRITORIO_DIAS")?.toLongOrNull() ?: 180,
                 firebaseServiceAccountJson = firebase,
                 resendApiKey = texto("RESEND_API_KEY"),
+                brevoApiKey = texto("BREVO_API_KEY"),
                 correoRemitente = texto("CORREO_REMITENTE"),
                 twilioSid = texto("TWILIO_ACCOUNT_SID"),
                 twilioToken = texto("TWILIO_AUTH_TOKEN"),

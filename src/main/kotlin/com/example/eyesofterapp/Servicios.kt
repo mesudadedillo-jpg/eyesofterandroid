@@ -2,7 +2,8 @@ package com.example.eyesofterapp
 
 import com.example.eyesofterapp.config.Configuracion
 import com.example.eyesofterapp.db.BaseDeDatos
-import com.example.eyesofterapp.notificaciones.CanalCorreoResend
+import com.example.eyesofterapp.notificaciones.CanalCorreo
+import com.example.eyesofterapp.notificaciones.EnviadorCorreo
 import com.example.eyesofterapp.notificaciones.CanalNotificacion
 import com.example.eyesofterapp.notificaciones.CanalPushFcm
 import com.example.eyesofterapp.notificaciones.Despachador
@@ -58,7 +59,7 @@ class Servicios(
     /** Solicitudes para vincular equipos de escritorio (en la base, duran 10 min). */
     val vinculaciones = Vinculaciones(db, usuarios, reloj)
 
-    /** Cliente HTTP para hablar con Firebase y Resend. Se crea solo si algún canal lo usa. */
+    /** Cliente HTTP para hablar con Firebase y el proveedor de correo (Brevo o Resend). Se crea solo si algún canal lo usa. */
     private val httpCreado = lazy {
         HttpClient(CIO) {
             install(HttpTimeout) {
@@ -69,6 +70,10 @@ class Servicios(
     }
     private val http: HttpClient by httpCreado
 
+    /** Brevo o Resend, según las variables; null = sin correo. */
+    private val correo: EnviadorCorreo? =
+        EnviadorCorreo.crear({ http }, config.brevoApiKey, config.resendApiKey, config.correoRemitente)
+
     private val listaCanales: List<CanalNotificacion> = canales?.invoke(dispositivos) ?: canalesReales()
 
     /** Nombres de los canales que sí quedaron configurados ("push", "correo"). Los muestra /salud. */
@@ -77,7 +82,7 @@ class Servicios(
     /** "¿Olvidaste tu contraseña?": código al correo o por SMS (misma tabla y reglas que el portal). */
     val recuperacion = RecuperacionPassword(
         db, usuarios, cifrado, auditoria,
-        envioCodigos ?: EnvioCodigosReal({ http }, config.resendApiKey, config.correoRemitente, config.twilioSid, config.twilioToken, config.twilioNumero, config.smsPrefijoPais),
+        envioCodigos ?: EnvioCodigosReal({ http }, correo, config.twilioSid, config.twilioToken, config.twilioNumero, config.smsPrefijoPais),
         reloj,
     )
 
@@ -109,10 +114,11 @@ class Servicios(
             }
         } ?: log.warn("FIREBASE_SERVICE_ACCOUNT no está definida: no se enviarán notificaciones push")
 
-        if (config.resendApiKey != null && config.correoRemitente != null) {
-            add(CanalCorreoResend(http, config.resendApiKey, config.correoRemitente))
+        if (correo != null) {
+            add(CanalCorreo(correo))
+            log.info("Correo de respaldo con ${correo.proveedor}")
         } else {
-            log.warn("RESEND_API_KEY o CORREO_REMITENTE no están definidas: no habrá correo de respaldo")
+            log.warn("Falta BREVO_API_KEY (o RESEND_API_KEY) o CORREO_REMITENTE: no habrá correo de respaldo")
         }
     }
 }

@@ -2,18 +2,9 @@ package com.example.eyesofterapp.notificaciones
 
 import io.ktor.client.HttpClient
 import io.ktor.client.request.basicAuth
-import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.forms.submitForm
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.http.parameters
-import kotlinx.serialization.json.add
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
 import org.slf4j.LoggerFactory
 
 /**
@@ -28,15 +19,15 @@ interface EnvioCodigos {
 }
 
 /**
- * Correo con Resend (gratis hasta 3 000 al mes) y, opcional, SMS con Twilio.
- * Mismas variables que el portal: RESEND_API_KEY, CORREO_REMITENTE, TWILIO_ACCOUNT_SID,
+ * Correo con Brevo o Resend (ver [EnviadorCorreo]) y, opcional, SMS con Twilio.
+ * Mismas variables que el portal: BREVO_API_KEY o RESEND_API_KEY, CORREO_REMITENTE, TWILIO_ACCOUNT_SID,
  * TWILIO_AUTH_TOKEN, TWILIO_NUMERO y SMS_PREFIJO_PAIS (+52).
  */
 class EnvioCodigosReal(
     /** Se pide al usarlo: el cliente HTTP se crea solo si de verdad se envía algo. */
     private val cliente: () -> HttpClient,
-    private val resendApiKey: String?,
-    private val remitente: String?,
+    /** null = no hay proveedor de correo configurado. */
+    private val enviador: EnviadorCorreo?,
     private val twilioSid: String?,
     private val twilioToken: String?,
     private val twilioNumero: String?,
@@ -47,24 +38,14 @@ class EnvioCodigosReal(
     override val smsDisponible = !twilioSid.isNullOrBlank() && !twilioToken.isNullOrBlank() && !twilioNumero.isNullOrBlank()
 
     override suspend fun correo(email: String, nombre: String, codigo: String): Boolean {
-        if (resendApiKey == null || remitente == null) {
-            log.warn("No se envió el código de recuperación a $email: falta RESEND_API_KEY o CORREO_REMITENTE")
+        if (enviador == null) {
+            log.warn("No se envió el código de recuperación a $email: falta BREVO_API_KEY (o RESEND_API_KEY) y CORREO_REMITENTE")
             return false
         }
-        val cuerpo = buildJsonObject {
-            put("from", remitente)
-            putJsonArray("to") { add(email) }
-            put("subject", "EYESOFTER: tu código para cambiar la contraseña")
-            put("text", textoCorreo(nombre, codigo))
-        }
         return try {
-            val r = cliente().post("https://api.resend.com/emails") {
-                bearerAuth(resendApiKey)
-                contentType(ContentType.Application.Json)
-                setBody(cuerpo.toString())
-            }
-            if (!r.status.isSuccess()) log.error("Resend respondió ${r.status.value} al enviar el código de recuperación")
-            r.status.isSuccess()
+            val error = enviador.enviar(email, "EYESOFTER: tu código para cambiar la contraseña", textoCorreo(nombre, codigo))
+            if (error != null) log.error("No se envió el código de recuperación: $error")
+            error == null
         } catch (e: Exception) {
             log.error("Falló el correo con el código de recuperación", e)
             false

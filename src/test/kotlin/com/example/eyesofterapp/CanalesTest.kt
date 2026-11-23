@@ -1,6 +1,10 @@
 package com.example.eyesofterapp
 
-import com.example.eyesofterapp.notificaciones.CanalCorreoResend
+import com.example.eyesofterapp.notificaciones.CanalCorreo
+import com.example.eyesofterapp.notificaciones.CorreoBrevo
+import com.example.eyesofterapp.notificaciones.CorreoResend
+import com.example.eyesofterapp.notificaciones.EnviadorCorreo
+import com.example.eyesofterapp.notificaciones.EnvioCodigosReal
 import com.example.eyesofterapp.notificaciones.Destinatario
 import com.example.eyesofterapp.repos.DispositivoRepository
 import com.example.eyesofterapp.repos.NotificacionRecord
@@ -16,6 +20,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
@@ -87,9 +92,71 @@ class CanalesTest {
             assertEquals("tutor@example.com", cuerpo["to"].toString().trim('[', ']', '"'))
             respond("""{"id":"abc"}""", HttpStatusCode.OK)
         })
-        val canal = CanalCorreoResend(http, "re_123", "EYESOFTER <avisos@example.com>")
+        val canal = CanalCorreo(CorreoResend({ http }, "re_123", "EYESOFTER <avisos@example.com>"))
         assertTrue(canal.enviar(notificacion, tutor, false).exito)
         assertTrue(llamado)
         assertFalse(canal.enviar(notificacion, tutor.copy(email = null), false).exito)
+    }
+
+    @Test
+    fun correoConBrevoUsaSuApiYSeparaElRemitente() = runBlocking {
+        var llamado = false
+        val http = HttpClient(MockEngine { req ->
+            llamado = true
+            assertEquals(CorreoBrevo.URL, req.url.toString())
+            assertEquals("xkeysib-123", req.headers["api-key"])
+            assertEquals(null, req.headers[HttpHeaders.Authorization])
+            val cuerpo = Json.parseToJsonElement((req.body as TextContent).text).jsonObject
+            val remitente = cuerpo["sender"]!!.jsonObject
+            assertEquals("EYESOFTER", remitente["name"]!!.jsonPrimitive.content)
+            assertEquals("eyesofter.avisos@gmail.com", remitente["email"]!!.jsonPrimitive.content)
+            assertEquals("tutor@example.com", cuerpo["to"]!!.jsonArray.single().jsonObject["email"]!!.jsonPrimitive.content)
+            assertTrue(cuerpo["subject"]!!.jsonPrimitive.content.startsWith("EYESOFTER: "))
+            assertTrue(cuerpo["textContent"]!!.jsonPrimitive.content.contains("Hola,"))
+            respond("""{"messageId":"<1@brevo>"}""", HttpStatusCode.Created)
+        })
+        val canal = CanalCorreo(CorreoBrevo({ http }, "xkeysib-123", "EYESOFTER <eyesofter.avisos@gmail.com>"))
+        val r = canal.enviar(notificacion, tutor, false)
+        assertTrue(r.exito)
+        assertTrue(r.detalle!!.contains("Brevo"))
+        assertTrue(llamado)
+    }
+
+    @Test
+    fun siBrevoRechazaElCorreoSeReportaElError() = runBlocking {
+        val http = HttpClient(MockEngine { respond("""{"code":"unauthorized"}""", HttpStatusCode.Unauthorized) })
+        val r = CanalCorreo(CorreoBrevo({ http }, "mala", "a@gmail.com")).enviar(notificacion, tutor, false)
+        assertFalse(r.exito)
+        assertTrue(r.detalle!!.startsWith("Brevo 401"))
+    }
+
+    @Test
+    fun eligeBrevoAntesQueResendYNadaSinRemitente() {
+        val http = { HttpClient(MockEngine { respond("") }) }
+        assertEquals("Brevo", EnviadorCorreo.crear(http, "xkeysib", "re_1", "a@gmail.com")?.proveedor)
+        assertEquals("Resend", EnviadorCorreo.crear(http, null, "re_1", "a@gmail.com")?.proveedor)
+        assertEquals("Brevo", EnviadorCorreo.crear(http, "xkeysib", null, "a@gmail.com")?.proveedor)
+        assertEquals(null, EnviadorCorreo.crear(http, "xkeysib", "re_1", null))
+        assertEquals(null, EnviadorCorreo.crear(http, " ", null, "a@gmail.com"))
+    }
+
+    @Test
+    fun separaNombreYCorreoDelRemitente() {
+        assertEquals("EYESOFTER" to "eyesofter.avisos@gmail.com", EnviadorCorreo.separarRemitente("EYESOFTER <eyesofter.avisos@gmail.com>"))
+        assertEquals("Escuela METANOIA" to "a@b.mx", EnviadorCorreo.separarRemitente("\"Escuela METANOIA\" <a@b.mx>"))
+        assertEquals("EYESOFTER" to "avisos@gmail.com", EnviadorCorreo.separarRemitente("  avisos@gmail.com "))
+    }
+
+    @Test
+    fun elCodigoDeRecuperacionSaleConBrevo() = runBlocking {
+        var texto = ""
+        val http = HttpClient(MockEngine { req ->
+            texto = (req.body as TextContent).text
+            respond("{}", HttpStatusCode.Created)
+        })
+        val envio = EnvioCodigosReal({ http }, CorreoBrevo({ http }, "xkeysib", "a@gmail.com"), null, null, null)
+        assertTrue(envio.correo("tutor@example.com", "Ana", "123456"))
+        assertTrue(texto.contains("123456"))
+        assertFalse(EnvioCodigosReal({ http }, null, null, null, null).correo("tutor@example.com", "Ana", "123456"))
     }
 }
