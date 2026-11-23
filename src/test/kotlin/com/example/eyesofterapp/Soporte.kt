@@ -8,6 +8,7 @@ import com.example.eyesofterapp.model.LoginRequestDto
 import com.example.eyesofterapp.model.LoginResponseDto
 import com.example.eyesofterapp.notificaciones.CanalNotificacion
 import com.example.eyesofterapp.notificaciones.Destinatario
+import com.example.eyesofterapp.notificaciones.EnvioCodigos
 import com.example.eyesofterapp.notificaciones.ResultadoEnvio
 import com.example.eyesofterapp.repos.NotificacionRecord
 import com.example.eyesofterapp.seguridad.CifradoDatos
@@ -161,9 +162,26 @@ class RelojFalso(var ahora: Instant = Instant.now().truncatedTo(ChronoUnit.MILLI
 }
 
 /** Servicios sobre la base de prueba recién reiniciada. */
-fun serviciosPrueba(reloj: RelojFalso = RelojFalso(), canales: List<CanalNotificacion> = emptyList(), config: Configuracion = configPrueba()): Servicios {
+fun serviciosPrueba(reloj: RelojFalso = RelojFalso(), canales: List<CanalNotificacion> = emptyList(), config: Configuracion = configPrueba(),
+                    envio: EnvioFalso = EnvioFalso()): Servicios {
     BasePrueba.reiniciar(reloj.ahora)
-    return Servicios(config, db = BasePrueba.db, canales = { canales }, reloj = { reloj.ahora })
+    return Servicios(config, db = BasePrueba.db, canales = { canales }, reloj = { reloj.ahora }, envioCodigos = envio)
+}
+
+/** No manda correos ni SMS: anota el código para que la prueba lo "lea". */
+class EnvioFalso(override var smsDisponible: Boolean = false) : EnvioCodigos {
+    data class Envio(val canal: String, val destino: String, val codigo: String)
+
+    val envios = mutableListOf<Envio>()
+    val ultimoCodigo: String get() = envios.last().codigo
+
+    override suspend fun correo(email: String, nombre: String, codigo: String): Boolean {
+        envios += Envio("correo", email, codigo); return true
+    }
+
+    override suspend fun sms(numero: String, texto: String): Boolean {
+        envios += Envio("sms", numero, Regex("\\d{6}").find(texto)!!.value); return true
+    }
 }
 
 /** Levanta el servidor en memoria y devuelve un cliente JSON. */

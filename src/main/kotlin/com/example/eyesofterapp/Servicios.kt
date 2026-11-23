@@ -6,6 +6,8 @@ import com.example.eyesofterapp.notificaciones.CanalCorreoResend
 import com.example.eyesofterapp.notificaciones.CanalNotificacion
 import com.example.eyesofterapp.notificaciones.CanalPushFcm
 import com.example.eyesofterapp.notificaciones.Despachador
+import com.example.eyesofterapp.notificaciones.EnvioCodigos
+import com.example.eyesofterapp.notificaciones.EnvioCodigosReal
 import com.example.eyesofterapp.notificaciones.Recordatorios
 import com.example.eyesofterapp.plugins.Tokens
 import com.example.eyesofterapp.repos.Auditoria
@@ -17,6 +19,7 @@ import com.example.eyesofterapp.repos.ExpedienteRepository
 import com.example.eyesofterapp.repos.NotificacionRepository
 import com.example.eyesofterapp.repos.UsuarioRepository
 import com.example.eyesofterapp.seguridad.CifradoDatos
+import com.example.eyesofterapp.seguridad.RecuperacionPassword
 import com.example.eyesofterapp.seguridad.Vinculaciones
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -35,6 +38,8 @@ class Servicios(
     /** Las pruebas pasan canales falsos para no llamar a Firebase de verdad. */
     canales: ((DispositivoRepository) -> List<CanalNotificacion>)? = null,
     val reloj: () -> Instant = Instant::now,
+    /** Las pruebas pasan uno falso que anota los códigos en vez de mandarlos. */
+    envioCodigos: EnvioCodigos? = null,
 ) {
     private val log = LoggerFactory.getLogger(Servicios::class.java)
 
@@ -68,6 +73,13 @@ class Servicios(
 
     /** Nombres de los canales que sí quedaron configurados ("push", "correo"). Los muestra /salud. */
     val canalesActivos: List<String> = listaCanales.map { it.nombre }
+
+    /** "¿Olvidaste tu contraseña?": código al correo o por SMS (misma tabla y reglas que el portal). */
+    val recuperacion = RecuperacionPassword(
+        db, usuarios, cifrado, auditoria,
+        envioCodigos ?: EnvioCodigosReal({ http }, config.resendApiKey, config.correoRemitente, config.twilioSid, config.twilioToken, config.twilioNumero, config.smsPrefijoPais),
+        reloj,
+    )
 
     val despachador = Despachador(notificaciones, usuarios, listaCanales, reloj)
 

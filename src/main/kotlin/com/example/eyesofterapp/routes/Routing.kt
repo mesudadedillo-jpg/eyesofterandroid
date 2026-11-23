@@ -23,6 +23,7 @@ fun Application.configureRouting(servicios: Servicios) {
         opticasRoutes(servicios)            // GET /opticas/cercanas, GET /api/clinicas
         rateLimit(LIMITE_ACCESO) {
             authRoutes(servicios)           // POST /api/login
+            recuperacionRoutes(servicios)   // POST /api/recuperar/solicitar, /api/recuperar/restablecer
             vinculacionRoutes(servicios)    // POST /api/escritorio/vinculaciones (el escritorio pide código)
             vinculacionFormularioRoutes(servicios) // POST /escritorio/vincular (navegador: login y aprobar)
             authenticate(AUTH_APP, optional = true) {
