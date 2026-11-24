@@ -14,7 +14,7 @@ escolar de tamizaje visual para la Escuela Primaria-Secundaria METANOIA (Tulanci
 |---|---|
 | Repositorio | `https://github.com/mesudadedillo-jpg/eyesofterandroid` |
 | En producción | `https://eyesofter-api.up.railway.app` (Railway) |
-| App móvil | `https://github.com/mesudadedillo-jpg/eyesofterandroidfront` |
+| App móvil (Android, escritorio, web; iOS en preparación) | `https://github.com/mesudadedillo-jpg/eyesofterweb` → carpeta `kmp/` (antes `eyesofterandroidfront`) |
 | Portal web (dueño de la base y de las cuentas) | `https://github.com/mesudadedillo-jpg/eyesofterweb` |
 | Contrato de la API | [`docs/API.md`](docs/API.md) |
 
@@ -130,7 +130,7 @@ createdb eyesofter_pruebas
 PRUEBAS_DATABASE_URL="jdbc:postgresql://localhost:5432/eyesofter_pruebas?user=postgres&password=postgres" ./gradlew test
 ```
 
-Si el portal agrega una migración, actualiza la copia del esquema (desde `eyesofterweb/EyesofterWeb`):
+Si el portal agrega una migración, actualiza la copia del esquema (desde `eyesofterweb/portal/EyesofterWeb`):
 
 ```bash
 dotnet ef migrations script --idempotent -o ../../eyesofterandroid/src/main/resources/esquema.sql

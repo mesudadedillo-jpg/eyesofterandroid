@@ -10,7 +10,7 @@ import javax.crypto.spec.SecretKeySpec
 /**
  * Cifrado de los datos sensibles de los alumnos (C-RC-04) con AES-256-GCM.
  *
- * Es el MISMO formato del portal web (eyesofterweb/EyesofterWeb/Seguridad/CifradoDatos.cs),
+ * Es el MISMO formato del portal web (eyesofterweb/portal/EyesofterWeb/Seguridad/CifradoDatos.cs),
  * porque los dos leen y escriben las mismas columnas:
  *   texto:  "v1:" + Base64( nonce[12] || cifrado || etiqueta[16] )
  *   bytes:  "E1" + nonce[12] || cifrado || etiqueta[16]
