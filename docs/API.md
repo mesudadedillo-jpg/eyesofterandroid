@@ -141,7 +141,7 @@ No distingue mayúsculas.
 | 429 | 3.er intento fallido seguido, o cuenta aún bloqueada (C-RFNN-01) | `{"error": "Cuenta bloqueada por intentos fallidos. Intenta de nuevo en 15 min."}` |
 | 401 | La cuenta tiene **verificación en dos pasos** y falta el código | `{"error": "Escribe el código de 6 dígitos…", "codigo": "REQUIERE_2FA"}` |
 | 401 | El código de dos pasos no es correcto (cuenta como intento fallido) | `{"error": "El código no es correcto…", "codigo": "CODIGO_2FA_INVALIDO"}` |
-| 403 | Dirección o Enfermería **sin** verificación en dos pasos (obligatoria con `EXIGIR_2FA_PERSONAL`) | `{"error": "…activa primero la verificación en dos pasos en el portal…", "codigo": "ACTIVAR_2FA"}` |
+| 403 | Dirección **sin** verificación en dos pasos (obligatoria con `EXIGIR_2FA_PERSONAL`) | `{"error": "…activa primero la verificación en dos pasos en el portal…", "codigo": "ACTIVAR_2FA"}` |
 
 **Verificación en dos pasos (TOTP):** se activa en el portal (menú de la cuenta). Desde ese momento el
 login lleva `"codigo": "123456"` con el código de la app autenticadora (Google/Microsoft Authenticator…).
@@ -484,8 +484,22 @@ creciente; como el folio es idempotente, reenviar nunca duplica. Si sigue fallan
 ### `GET /api/escritorio/alumnos?q=`
 
 **Búsqueda**, no listado: `q` obligatorio de al menos 3 caracteres (si no, **400**); `%` y `_` se buscan
-literalmente. Devuelve como máximo 20: `[{"matricula","nombre","apellidos","nivel","grado","grupo"}]`.
+literalmente. Devuelve como máximo 20: `[{"matricula","nombre","apellidos","nivel","grado","grupo",
+"fechaNacimiento","usaLentes","tutorNombre","tutorTelefono","tutorCorreo","tutorParentesco","ultimoTamizaje",
+"ultimoSemaforo","casoAbierto"}]`. Los datos del alumno y del tutor sirven para que el escritorio llene el registro
+sin volver a capturarlos; `casoAbierto` (`Abierto`/`EnSeguimiento`, o `null`) indica que aún no lo atiende un especialista.
 Cada búsqueda queda en la bitácora con la cuenta que vinculó el equipo (`BUSCAR_ALUMNOS`).
+
+### `GET /api/escritorio/grupos`
+
+Grupos de las escuelas de quien vinculó el equipo: `[{"nivel","grado","grupo","alumnos","evaluados"}]`, donde
+`evaluados` cuenta a los alumnos con tamizaje desde el inicio del ciclo escolar (1 de agosto).
+
+### `GET /api/escritorio/grupo?nivel=&grado=&grupo=`
+
+Lista de **un** grupo (máx. 80, mismo formato que la búsqueda) para la jornada de tamizaje en la escuela: el
+escritorio pasa a los alumnos uno por uno. Faltan parámetros → **400**. Un grupo de otra escuela devuelve `[]`.
+Queda en la bitácora (`VER_GRUPO`).
 
 ---
 
@@ -514,6 +528,7 @@ Si cambias una, cámbiala en los dos (`eyesofterweb/Servicios/Expedientes.cs` y 
 
 | Fecha | Cambio |
 |---|---|
+| 2026-11-24 | **Dos pasos solo obligatorio para Dirección** (`ACTIVAR_2FA` ya no aplica a Enfermería; para los demás roles es opcional). **Escritorio:** la búsqueda de alumnos trae fecha de nacimiento, tutor y estado del seguimiento (campos opcionales, compatibles con escritorios anteriores); nuevas `GET /api/escritorio/grupos` y `GET /api/escritorio/grupo` para la jornada por grupo. |
 | 2026-11-21 (c) | **Seguridad.** `LoginRequestDto` agrega `codigo` (verificación en dos pasos); nuevos `REQUIERE_2FA`, `CODIGO_2FA_INVALIDO` (401) y `ACTIVAR_2FA` (403). La página de vinculación del escritorio pide el código. Token del personal: 12 h. Cabecera HSTS. |
 | 2026-11-21 (b) | **Varias escuelas.** El personal solo ve lo de sus escuelas (`usuario_planteles`; `administrador_global` ve todas); lo de otra escuela es 404. Alertas a la Enfermería de la escuela del alumno. Avisos y seguimiento por escuela. Reportes de fallas al administrador global. El escritorio trabaja con las escuelas de quien lo vinculó; matrícula única por escuela y nuevo **409** `MATRICULA_AMBIGUA`. Vinculaciones en la base. **Convenios:** `convenio` en `Optica`, `ClinicaDto` (con sesión de tutor) y `PaseDto`. |
 | 2026-11-21 | **Escritorio: adiós a `ESCRITORIO_API_KEY`.** Cada equipo se vincula en el navegador con una cuenta de Dirección o Enfermería (`/api/escritorio/vinculaciones`, `/escritorio/vincular`) y usa `Authorization: Bearer <token del equipo>`. `GET /api/escritorio/alumnos` exige `q` de 3+ caracteres, devuelve máx. 20 y ya no trae `usaLentes`. Nueva `GET /api/escritorio/equipo`. La bitácora registra quién envía y quién busca. |

@@ -3,6 +3,8 @@ package com.example.eyesofterapp.routes
 import com.example.eyesofterapp.Servicios
 import com.example.eyesofterapp.model.AlumnoEscritorioDto
 import com.example.eyesofterapp.model.EquipoEscritorioDto
+import com.example.eyesofterapp.model.GrupoEscritorioDto
+import com.example.eyesofterapp.repos.ExpedienteRepository
 import com.example.eyesofterapp.plugins.SesionEscritorio
 import com.example.eyesofterapp.plugins.validarEscritorio
 import com.example.eyesofterapp.model.IncidenciaEscritorioDto
@@ -122,7 +124,33 @@ fun Route.escritorioRoutes(servicios: Servicios) {
         val lista = servicios.expedientes.alumnos(q.take(80), equipo.usuario.alcance)
         servicios.auditoria.registrar(equipo.usuario.email, "BUSCAR_ALUMNOS", detalle = "Equipo ${equipo.equipo}: \"${q.take(80)}\" (${lista.size} resultado(s))",
             ip = call.ip(), origen = "escritorio", plantelId = equipo.usuario.planteles.singleOrNull())
-        call.respond(lista.map { AlumnoEscritorioDto(it.matricula, it.nombre, it.apellidos, it.nivel, it.grado, it.grupo) })
+        call.respond(lista.map { it.toDto() })
+    }
+
+    /** Grupos de la escuela y cuántos ya pasaron el tamizaje en el ciclo (desde el 1 de agosto). */
+    get("/api/escritorio/grupos") {
+        val equipo = call.equipoVinculado(servicios) ?: return@get
+        val hoy = ExpedienteRepository.hoy(servicios.reloj())
+        val inicioCiclo = if (hoy.monthValue >= 8) LocalDate.of(hoy.year, 8, 1) else LocalDate.of(hoy.year - 1, 8, 1)
+        val grupos = servicios.expedientes.grupos(equipo.usuario.alcance, inicioCiclo)
+        call.respond(grupos.map { GrupoEscritorioDto(it.nivel, it.grado, it.grupo, it.alumnos, it.evaluados) })
+    }
+
+    /** Lista de un grupo para la jornada de tamizaje: el escritorio pasa a los alumnos uno por uno. */
+    get("/api/escritorio/grupo") {
+        val equipo = call.equipoVinculado(servicios) ?: return@get
+        val p = call.request.queryParameters
+        val nivel = p["nivel"]?.trim().orEmpty()
+        val grado = p["grado"]?.toIntOrNull()
+        val grupo = p["grupo"]?.trim().orEmpty()
+        if (nivel.isEmpty() || grado == null || grupo.isEmpty() || grupo.length > 5) {
+            call.error(HttpStatusCode.BadRequest, "Indica nivel, grado y grupo (por ejemplo Primaria, 3, B).")
+            return@get
+        }
+        val lista = servicios.expedientes.grupo(nivel.take(30), grado, grupo, equipo.usuario.alcance)
+        servicios.auditoria.registrar(equipo.usuario.email, "VER_GRUPO", detalle = "Equipo ${equipo.equipo}: $nivel $grado° $grupo (${lista.size} alumno(s))",
+            ip = call.ip(), origen = "escritorio", plantelId = equipo.usuario.planteles.singleOrNull())
+        call.respond(lista.map { it.toDto() })
     }
 
     get("/api/escritorio/equipo") {
@@ -146,3 +174,8 @@ private suspend fun ApplicationCall.equipoVinculado(servicios: Servicios): Sesio
     }
     return sesion
 }
+
+private fun ExpedienteRepository.AlumnoEscritorio.toDto() = AlumnoEscritorioDto(
+    matricula, nombre, apellidos, nivel, grado, grupo, fechaNacimiento?.toString(), usaLentes,
+    tutorNombre, tutorTelefono, tutorCorreo, tutorParentesco, ultimoTamizaje?.toString(), ultimoSemaforo, casoAbierto,
+)

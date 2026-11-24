@@ -102,7 +102,7 @@ suspend fun autenticar(servicios: Servicios, usuario: String, password: String, 
             return if (bloqueada) Autenticacion.Fallida(HttpStatusCode.TooManyRequests, "Cuenta bloqueada por intentos fallidos. Intenta de nuevo en ${servicios.config.loginBloqueoMin} min.")
             else Autenticacion.Fallida(HttpStatusCode.Unauthorized, "El código no es correcto o ya venció. Escribe el que aparece ahora en tu app.", "CODIGO_2FA_INVALIDO")
         }
-    } else if (u.esPersonal && servicios.config.exigir2faPersonal) {
+    } else if (u.rol == RolesIdentity.DIRECCION && servicios.config.exigir2faPersonal) {
         return Autenticacion.Fallida(HttpStatusCode.Forbidden,
             "Por seguridad, activa primero la verificación en dos pasos en el portal web (menú de tu cuenta → Verificación en dos pasos).", "ACTIVAR_2FA")
     }

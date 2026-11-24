@@ -25,8 +25,8 @@ data class Configuracion(
     /** Horas que dura la sesión del personal escolar en la app: ve datos de muchos menores. */
     val jwtHorasPersonal: Long = 12,
     /**
-     * Dirección y Enfermería deben tener la verificación en dos pasos activa (se activa en el
-     * portal) para entrar a la app o vincular un equipo. En las pruebas se apaga por defecto.
+     * Dirección debe tener la verificación en dos pasos activa (se activa en el portal) para entrar
+     * a la app o vincular un equipo. Para Enfermería, clínicas, tutores y alumnos es opcional. En las pruebas se apaga por defecto.
      */
     val exigir2faPersonal: Boolean = false,
     /**

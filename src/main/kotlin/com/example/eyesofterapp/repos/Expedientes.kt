@@ -375,7 +375,35 @@ class ExpedienteRepository(private val db: BaseDeDatos, private val cifrado: Cif
 
     // ------------------------------------------------------------------ escritorio: consultas de apoyo
 
-    data class AlumnoEscritorio(val matricula: String, val nombre: String, val apellidos: String, val nivel: String, val grado: Int, val grupo: String)
+    /**
+     * Lo que el escritorio necesita para llenar el registro sin volver a capturarlo: datos del
+     * alumno, su tutor (contacto para avisarle) y cómo va su seguimiento. Lo ve sólo un equipo
+     * vinculado por Dirección/Enfermería de esa escuela, que ya ve esos datos en el portal.
+     */
+    data class AlumnoEscritorio(
+        val matricula: String, val nombre: String, val apellidos: String, val nivel: String, val grado: Int, val grupo: String,
+        val fechaNacimiento: LocalDate? = null, val usaLentes: Boolean = false,
+        val tutorNombre: String? = null, val tutorTelefono: String? = null, val tutorCorreo: String? = null, val tutorParentesco: String? = null,
+        val ultimoTamizaje: LocalDate? = null, val ultimoSemaforo: String? = null, val casoAbierto: String? = null,
+    )
+
+    data class GrupoEscritorio(val nivel: String, val grado: Int, val grupo: String, val alumnos: Int, val evaluados: Int)
+
+    private val selectAlumnoEscritorio = """
+        select a.matricula, a.nombre, a.apellidos, a.nivel, a.grado, a.grupo, a.fecha_nacimiento, a.usa_lentes,
+               tu.nombre || ' ' || tu.apellidos as tutor_nombre, tu.telefono as tutor_telefono, tu.correo as tutor_correo, tu.parentesco as tutor_parentesco,
+               ut.fecha as ultimo_tamizaje, ut.semaforo as ultimo_semaforo,
+               (select ca.estado from casos ca where ca.alumno_id = a.id and ca.estado <> 'Cerrado' order by ca.id desc limit 1) as caso_abierto
+          from alumnos a
+          left join tutores tu on tu.id = a.tutor_id
+          left join lateral (select t.fecha, t.semaforo from tamizajes t where t.alumno_id = a.id order by t.fecha desc, t.id desc limit 1) ut on true"""
+
+    private fun alumnoEscritorio(it: java.sql.ResultSet) = AlumnoEscritorio(
+        it.getString("matricula"), it.getString("nombre"), it.getString("apellidos"), it.getString("nivel"), it.getInt("grado"), it.getString("grupo"),
+        it.getDate("fecha_nacimiento")?.toLocalDate(), it.getBoolean("usa_lentes"),
+        it.getString("tutor_nombre"), it.getString("tutor_telefono"), it.getString("tutor_correo"), it.getString("tutor_parentesco"),
+        it.getDate("ultimo_tamizaje")?.toLocalDate(), it.getString("ultimo_semaforo"), it.getString("caso_abierto"),
+    )
 
     /**
      * Para que el escritorio valide la matrícula antes de capturar el tamizaje. Es una
@@ -385,12 +413,29 @@ class ExpedienteRepository(private val db: BaseDeDatos, private val cifrado: Cif
     suspend fun alumnos(texto: String, alcance: IntArray?, limite: Int = 20): List<AlumnoEscritorio> = db.leer { c ->
         val q = "%" + texto.trim().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         c.lista(
-            """select * from alumnos where (matricula ilike ? or (nombre || ' ' || apellidos) ilike ?)
-               and (?::int[] is null or plantel_id = any(?::int[])) order by grado, grupo, apellidos limit ?""", q, q, alcance, alcance, limite
-        ) {
-            AlumnoEscritorio(it.getString("matricula"), it.getString("nombre"), it.getString("apellidos"), it.getString("nivel"),
-                it.getInt("grado"), it.getString("grupo"))
-        }
+            """$selectAlumnoEscritorio where (a.matricula ilike ? or (a.nombre || ' ' || a.apellidos) ilike ?)
+               and (?::int[] is null or a.plantel_id = any(?::int[])) order by a.grado, a.grupo, a.apellidos limit ?""", q, q, alcance, alcance, limite,
+            fila = ::alumnoEscritorio
+        )
+    }
+
+    /** Grupos de la escuela con cuántos alumnos ya tienen tamizaje desde [desde] (jornada escolar). */
+    suspend fun grupos(alcance: IntArray?, desde: LocalDate): List<GrupoEscritorio> = db.leer { c ->
+        c.lista(
+            """select a.nivel, a.grado, a.grupo, count(*) as alumnos,
+                      count(*) filter (where exists (select 1 from tamizajes t where t.alumno_id = a.id and t.fecha >= ?)) as evaluados
+                 from alumnos a where (?::int[] is null or a.plantel_id = any(?::int[]))
+                group by a.nivel, a.grado, a.grupo order by a.nivel, a.grado, a.grupo""", desde, alcance, alcance
+        ) { GrupoEscritorio(it.getString("nivel"), it.getInt("grado"), it.getString("grupo"), it.getInt("alumnos"), it.getInt("evaluados")) }
+    }
+
+    /** Lista de UN grupo, para pasar a los alumnos uno por uno el día del tamizaje (máx. 80). */
+    suspend fun grupo(nivel: String, grado: Int, grupo: String, alcance: IntArray?): List<AlumnoEscritorio> = db.leer { c ->
+        c.lista(
+            """$selectAlumnoEscritorio where a.nivel = ? and a.grado = ? and upper(a.grupo) = upper(?)
+               and (?::int[] is null or a.plantel_id = any(?::int[])) order by a.apellidos, a.nombre limit 80""", nivel, grado, grupo, alcance, alcance,
+            fila = ::alumnoEscritorio
+        )
     }
 
     companion object {

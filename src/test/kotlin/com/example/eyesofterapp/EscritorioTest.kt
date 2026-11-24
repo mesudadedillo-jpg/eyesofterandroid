@@ -1,6 +1,7 @@
 package com.example.eyesofterapp
 
 import com.example.eyesofterapp.model.AlumnoEscritorioDto
+import com.example.eyesofterapp.model.GrupoEscritorioDto
 import com.example.eyesofterapp.model.EquipoEscritorioDto
 import com.example.eyesofterapp.model.VinculacionCreadaDto
 import com.example.eyesofterapp.model.VinculacionEntradaDto
@@ -302,5 +303,31 @@ class EscritorioTest {
         assertEquals(2, lopez.size)
         // Cada búsqueda queda en la bitácora con la cuenta que vinculó el equipo ("%%%", "a002", "López").
         assertEquals(3, BasePrueba.cuenta("select count(*) from auditoria where accion = 'BUSCAR_ALUMNOS' and usuario = 'enfermeria@eyesofter.mx'"))
+    }
+
+    @Test
+    fun laBusquedaLlenaElRegistroConDatosDelAlumnoYSuTutor() = testApplication {
+        val client = servidor(servicios)
+        val ana = client.get("/api/escritorio/alumnos?q=A001") { bearerAuth(tokenEquipo) }.body<List<AlumnoEscritorioDto>>().single()
+        assertEquals("2017-03-01", ana.fechaNacimiento)
+        assertEquals("María López", ana.tutorNombre)
+        assertEquals("7751110000", ana.tutorTelefono)
+        assertEquals("tutor@eyesofter.mx", ana.tutorCorreo)
+    }
+
+    @Test
+    fun jornadaPorGrupoSoloDeLaEscuelaDelEquipo() = testApplication {
+        val client = servidor(servicios)
+        val grupos = client.get("/api/escritorio/grupos") { bearerAuth(tokenEquipo) }.body<List<GrupoEscritorioDto>>()
+        // El equipo es de la escuela 1: no ve el grupo de Secundaria de la escuela 2.
+        assertTrue(grupos.none { it.nivel == "Secundaria" })
+        assertEquals(3, grupos.sumOf { it.alumnos })
+        val tercero = client.get("/api/escritorio/grupo?nivel=Primaria&grado=3&grupo=b") { bearerAuth(tokenEquipo) }.body<List<AlumnoEscritorioDto>>()
+        assertEquals(listOf("A001"), tercero.map { it.matricula })
+        val ajeno = client.get("/api/escritorio/grupo?nivel=Secundaria&grado=2&grupo=B") { bearerAuth(tokenEquipo) }.body<List<AlumnoEscritorioDto>>()
+        assertTrue(ajeno.isEmpty())
+        assertEquals(HttpStatusCode.BadRequest, client.get("/api/escritorio/grupo?nivel=Primaria") { bearerAuth(tokenEquipo) }.status)
+        assertEquals(HttpStatusCode.Unauthorized, client.get("/api/escritorio/grupos").status)
+        assertEquals(2, BasePrueba.cuenta("select count(*) from auditoria where accion = 'VER_GRUPO'"))
     }
 }

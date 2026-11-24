@@ -47,7 +47,11 @@ data class IncidenciaEscritorioDto(
     val equipo: String? = null,
 )
 
-/** GET /api/escritorio/alumnos?q=: para que el escritorio valide la matrícula. */
+/**
+ * GET /api/escritorio/alumnos?q= y /api/escritorio/grupo: para que el escritorio valide la
+ * matrícula y llene el registro (alumno y tutor) sin volver a capturarlo. Los campos nuevos
+ * son opcionales para que los escritorios anteriores sigan funcionando.
+ */
 @Serializable
 data class AlumnoEscritorioDto(
     val matricula: String,
@@ -56,7 +60,23 @@ data class AlumnoEscritorioDto(
     val nivel: String,
     val grado: Int,
     val grupo: String,
+    /** AAAA-MM-DD. */
+    val fechaNacimiento: String? = null,
+    val usaLentes: Boolean = false,
+    val tutorNombre: String? = null,
+    val tutorTelefono: String? = null,
+    val tutorCorreo: String? = null,
+    val tutorParentesco: String? = null,
+    /** Fecha (AAAA-MM-DD) y semáforo del último tamizaje registrado en la Suite. */
+    val ultimoTamizaje: String? = null,
+    val ultimoSemaforo: String? = null,
+    /** Estado del caso abierto (Abierto / EnSeguimiento): aún no lo atiende un especialista. */
+    val casoAbierto: String? = null,
 )
+
+/** GET /api/escritorio/grupos: grupos de la escuela y avance de la jornada. */
+@Serializable
+data class GrupoEscritorioDto(val nivel: String, val grado: Int, val grupo: String, val alumnos: Int, val evaluados: Int)
 
 /** POST /api/escritorio/vinculaciones: el escritorio pide vincularse. */
 @Serializable

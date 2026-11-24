@@ -84,16 +84,18 @@ class SeguridadTest {
     }
 
     @Test
-    fun elPersonalDebeActivarDosPasosSiSeExige() = testApplication {
+    fun soloDireccionDebeActivarDosPasosSiSeExige() = testApplication {
         val estricto = Servicios(configPrueba().copy(exigir2faPersonal = true), db = BasePrueba.db, canales = { emptyList() }, reloj = { reloj.ahora })
         val client = servidor(estricto)
-        val r = client.entrar("enfermeria@eyesofter.mx")
+        val r = client.entrar("direccion@eyesofter.mx")
         assertEquals(HttpStatusCode.Forbidden, r.status)
         assertTrue("ACTIVAR_2FA" in r.bodyAsText())
-        // Las familias no lo necesitan.
-        assertEquals(HttpStatusCode.OK, client.entrar("tutor@eyesofter.mx").status)
-        activarDosPasos("enfermeria@eyesofter.mx")
-        assertEquals(HttpStatusCode.OK, client.entrar("enfermeria@eyesofter.mx", codigoActual()).status)
+        // Para Enfermería, clínicas, tutores y alumnos es opcional.
+        listOf("enfermeria@eyesofter.mx", "especialista@eyesofter.mx", "tutor@eyesofter.mx", "alumno@eyesofter.mx").forEach {
+            assertEquals(HttpStatusCode.OK, client.entrar(it).status, it)
+        }
+        activarDosPasos("direccion@eyesofter.mx")
+        assertEquals(HttpStatusCode.OK, client.entrar("direccion@eyesofter.mx", codigoActual()).status)
     }
 
     @Test
