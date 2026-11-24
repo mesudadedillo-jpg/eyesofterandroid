@@ -3,7 +3,7 @@
 | Área | Medida |
 |---|---|
 | Acceso | Mismas cuentas que el portal; bloqueo compartido de 3 intentos; respuestas con el mismo tiempo exista o no la cuenta |
-| Dos pasos | TOTP compatible con el portal; obligatorio para el personal (`EXIGIR_2FA_PERSONAL`) |
+| Dos pasos | TOTP compatible con el portal; obligatorio para Dirección (`EXIGIR_2FA_PERSONAL`); opcional para Enfermería, clínicas, tutores y alumnos |
 | Tokens | JWT firmados; el personal 12 h, tutores 30 días; se invalidan al cambiar contraseña, rol o desactivar la cuenta |
 | Escritorio | Sin clave compartida: cada equipo se vincula en el navegador con una cuenta de su escuela (con código de dos pasos) |
 | Varias escuelas | `Usuario.alcance`: el personal solo ve su escuela; alertas solo a la Enfermería de la escuela del alumno |
