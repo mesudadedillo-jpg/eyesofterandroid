@@ -133,7 +133,7 @@ PRUEBAS_DATABASE_URL="jdbc:postgresql://localhost:5432/eyesofter_pruebas?user=po
 Si el portal agrega una migración, actualiza la copia del esquema (desde `eyesofterweb/portal/EyesofterWeb`):
 
 ```bash
-dotnet ef migrations script --idempotent -o ../../eyesofterandroid/src/main/resources/esquema.sql
+dotnet ef migrations script --idempotent -o ../../../eyesofterandroid/src/main/resources/esquema.sql
 ```
 
 ### 3. Correr el servidor
