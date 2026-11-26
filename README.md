@@ -14,7 +14,7 @@ escolar de tamizaje visual para la Escuela Primaria-Secundaria METANOIA (Tulanci
 |---|---|
 | Repositorio | `https://github.com/mesudadedillo-jpg/eyesofterandroid` |
 | En producción | `https://eyesofter-api.up.railway.app` (Railway) |
-| App móvil | `https://github.com/mesudadedillo-jpg/eyesofterandroidfront` |
+| App móvil | `https://github.com/mesudadedillo-jpg/eyesofterweb` (carpeta `EyesofterApp/`) |
 | Portal web (dueño de la base y de las cuentas) | `https://github.com/mesudadedillo-jpg/eyesofterweb` |
 | Contrato de la API | [`docs/API.md`](docs/API.md) |
 

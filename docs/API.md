@@ -3,7 +3,7 @@
 > **Este archivo es el acuerdo entre los proyectos** y existe, idéntico, en:
 >
 > - `eyesofter-backend/docs/API.md` (repositorio `eyesofterandroid`, servidor Ktor)
-> - `eyesofter-app/docs/API.md` (repositorio `eyesofterandroidfront`, app móvil)
+> - `eyesofter-app/docs/API.md` (repositorio `eyesofterweb`, carpeta `EyesofterApp/`, app móvil)
 >
 > **Si cambias una ruta, un parámetro o un campo de un DTO, actualiza los proyectos
 > y las dos copias de este archivo en el mismo momento.** No hay código compartido
